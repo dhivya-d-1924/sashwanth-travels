@@ -1,0 +1,23 @@
+{
+  "name": "sashwanth-travels",
+  "version": "3.2.0",
+  "private": true,
+  "description": "Sashwanth Travels booking website: Saarathi AI booking agent (voice + text), accounts with customer/driver/manager/owner roles, live trip photos with odometer-based final bills, and an owner console.",
+  "main": "server/server.js",
+  "scripts": {
+    "build": "node scripts/sync-shared.js && node scripts/build.js",
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "test": "node scripts/sync-shared.js && node scripts/build.js && node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.133.0",
+    "express": "4.22.3",
+    "leaflet": "^1.9.4",
+    "nodemailer": "^10.1.6",
+    "qrcode": "^1.5.4"
+  }
+}

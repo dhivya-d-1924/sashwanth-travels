@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: sashwanth-travels
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: node server/server.js
+    healthCheckPath: /api/health
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATA_DIR
+        value: /var/data
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: PHOTOS
+        value: "on"
+      - key: PUBLIC_URL
+        sync: false
+      - key: OWNER_NAME
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_PHONE
+        sync: false
+      - key: OWNER_PASSWORD
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false

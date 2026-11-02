@@ -1,0 +1,34 @@
+# Website + Caddy (automatic free HTTPS certificates from Let's Encrypt)
+# Start:  docker compose up -d --build      Logs: docker compose logs -f app
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - TRUST_PROXY=1
+      - COOKIE_SECURE=1
+    volumes:
+      - ./data:/app/data
+    expose:
+      - "3000"
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN=${DOMAIN:?Set DOMAIN in .env, e.g. DOMAIN=sashwanthtravels.in}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  caddy_data:
+  caddy_config:

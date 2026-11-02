@@ -1,0 +1,60 @@
+[
+  {"id":"kodaikanal","name":"Kodaikanal","district":"Dindigul","tagline":"Princess of hill stations: a star-shaped lake, cliff-edge walks and misty pine forests.","kw":["kodaikanal","kodai"],"cats":["Kodaikanal"],
+   "attractions":[
+     {"id":"kodai-lake","name":"Kodaikanal Lake","type":"lake","cats":["Kodaikanal Lake"],"kw":["kodaikanal lake","kodai lake"]},
+     {"id":"coakers-walk","name":"Coaker's Walk","type":"viewpoint","cats":["Coaker's Walk"],"kw":["coaker"]},
+     {"id":"pine-forest","name":"Pine Forest","type":"nature","cats":["Pine forest, Kodaikanal","Trees in Kodaikanal"],"kw":["pine"]},
+     {"id":"pillar-rocks","name":"Pillar Rocks","type":"viewpoint","cats":["Pillar Rocks, Kodaikanal"],"kw":["pillar rock"]}]},
+  {"id":"ooty","name":"Ooty","district":"Nilgiris","tagline":"Queen of hill stations: rolling tea gardens, a century-old botanical garden and the toy train.","kw":["ooty","udhagamandalam","ootacamund","nilgiri"],"cats":["Udhagamandalam","Ooty"],
+   "attractions":[
+     {"id":"ooty-botanical","name":"Government Botanical Garden","type":"nature","cats":["Government Botanical Garden"],"kw":["botanical"]},
+     {"id":"doddabetta","name":"Doddabetta Peak","type":"viewpoint","cats":["Doddabetta"],"kw":["doddabetta"]},
+     {"id":"ooty-tea","name":"Tea Gardens","type":"nature","cats":["Tea plantations in the Nilgiris","Tea plantations in Tamil Nadu"],"kw":["tea"],"needPlace":true},
+     {"id":"toy-train","name":"Nilgiri Mountain Railway (Toy Train)","type":"railway","cats":["Nilgiri Mountain Railway"],"kw":["nilgiri mountain railway","toy train"]}]},
+  {"id":"coimbatore","name":"Coimbatore","district":"Coimbatore","tagline":"Gateway to the Western Ghats: hill temples, the giant Adiyogi bust and forest waterfalls.","kw":["coimbatore","kovai"],"cats":["Coimbatore"],
+   "attractions":[
+     {"id":"marudhamalai","name":"Marudhamalai Temple","type":"temple","cats":["Marudamalai","Marudamalai Temple"],"kw":["marudamalai","marudhamalai","maruthamalai"]},
+     {"id":"adiyogi","name":"Isha Adiyogi","type":"landmark","cats":["Adiyogi Shiva bust","Isha Yoga Center, Coimbatore"],"kw":["adiyogi","adi yogi"]},
+     {"id":"kovai-kutralam","name":"Kovai Kutralam Falls","type":"waterfall","cats":["Kovai Kutralam Falls","Siruvani"],"kw":["kovai kutralam","kovai courtallam","siruvani"]}]},
+  {"id":"valparai","name":"Valparai","district":"Coimbatore","tagline":"Forty hairpin bends up to emerald tea estates, a dam lake and rainforest waterfalls.","kw":["valparai","aliyar","anamalai"],"cats":["Valparai"],
+   "attractions":[
+     {"id":"valparai-tea","name":"Tea Estates","type":"nature","cats":["Valparai","Tea plantations in Tamil Nadu"],"kw":["tea"],"needPlace":true},
+     {"id":"aliyar","name":"Aliyar Dam","type":"lake","cats":["Aliyar Reservoir"],"kw":["aliyar"]},
+     {"id":"valparai-falls","name":"Waterfalls","type":"waterfall","cats":["Monkey Falls","Waterfalls in Tamil Nadu"],"kw":["monkey falls","valparai","aliyar"],"needPlace":true}]},
+  {"id":"madurai","name":"Madurai","district":"Madurai","tagline":"The temple city: the towering gopurams of Meenakshi Amman and a royal Nayak palace.","kw":["madurai"],"cats":["Madurai"],
+   "attractions":[
+     {"id":"meenakshi","name":"Meenakshi Amman Temple","type":"temple","cats":["Madurai Meenakshi Temple","Gopurams of the Madurai Meenakshi Temple"],"kw":["meenakshi","minakshi"]},
+     {"id":"nayakkar-mahal","name":"Thirumalai Nayakkar Mahal","type":"heritage","cats":["Thirumalai Nayakkar Mahal","Thirumalai Nayak Palace"],"kw":["nayak","nayakkar"]}]},
+  {"id":"rameswaram","name":"Rameswaram","district":"Ramanathapuram","tagline":"An island pilgrimage: endless temple corridors, the Pamban sea bridge and the ghost town of Dhanushkodi.","kw":["rameswaram","rameshwaram","pamban","dhanushkodi"],"cats":["Rameswaram"],
+   "attractions":[
+     {"id":"ramanathaswamy","name":"Ramanathaswamy Temple","type":"temple","cats":["Ramanathaswamy Temple","Ramanathaswamy Temple corridor"],"kw":["ramanathaswamy","ramanathaswami","rameswaram temple"]},
+     {"id":"pamban","name":"Pamban Bridge","type":"landmark","cats":["Pamban Bridge"],"kw":["pamban"]},
+     {"id":"dhanushkodi","name":"Dhanushkodi","type":"beach","cats":["Dhanushkodi"],"kw":["dhanushkodi"]}]},
+  {"id":"kanyakumari","name":"Kanyakumari","district":"Kanyakumari","tagline":"Where three seas meet: the Vivekananda Rock, the Thiruvalluvar statue and famous sunrises.","kw":["kanyakumari","kanniyakumari","cape comorin"],"cats":["Kanyakumari","Kanniyakumari"],
+   "attractions":[
+     {"id":"vivekananda-rock","name":"Vivekananda Rock Memorial","type":"landmark","cats":["Vivekananda Rock Memorial"],"kw":["vivekananda"]},
+     {"id":"thiruvalluvar","name":"Thiruvalluvar Statue","type":"landmark","cats":["Thiruvalluvar Statue, Kanniyakumari","Thiruvalluvar Statue, Kanyakumari"],"kw":["valluvar"]},
+     {"id":"kanyakumari-sunrise","name":"Sunrise at the Cape","type":"beach","cats":["Remote views of the Thiruvalluvar Statue and the Vivekananda Rock Memorial","Sunrises in Kanyakumari"],"kw":["sunrise","sunset","dawn"],"needPlace":true}]},
+  {"id":"thanjavur","name":"Thanjavur","district":"Thanjavur","tagline":"Chola grandeur: the thousand-year-old Brihadeeswarar Temple and the Maratha palace.","kw":["thanjavur","tanjore","tanjavur"],"cats":["Thanjavur"],
+   "attractions":[
+     {"id":"brihadeeswarar","name":"Brihadeeswarar Temple","type":"temple","cats":["Brihadisvara Temple","Vimana of the Brihadisvara Temple","Central views of the Brihadisvara Temple"],"kw":["brihad","peruvudaiyar","big temple"]},
+     {"id":"thanjavur-palace","name":"Thanjavur Maratha Palace","type":"heritage","cats":["Thanjavur Maratha Palace"],"kw":["palace"]}]},
+  {"id":"chennai","name":"Chennai","district":"Chennai","tagline":"The capital by the sea: Marina Beach, Mylapore's Kapaleeshwarar Temple and Pallava Mahabalipuram.","kw":["chennai","madras","mylapore","mahabalipuram","mamallapuram","marina"],"cats":["Chennai"],
+   "attractions":[
+     {"id":"marina","name":"Marina Beach","type":"beach","cats":["Marina Beach"],"kw":["marina"]},
+     {"id":"kapaleeshwarar","name":"Kapaleeshwarar Temple","type":"temple","cats":["Kapaleeshwarar Temple"],"kw":["kapaleeshwarar","kapaleeswarar","kapaleshwarar"]},
+     {"id":"mahabalipuram","name":"Mahabalipuram Shore Temple","type":"heritage","district":"Chengalpattu","cats":["Shore Temple","Mahabalipuram Beach"],"kw":["shore temple","mahabalipuram","mamallapuram"]}]},
+  {"id":"yercaud","name":"Yercaud","district":"Salem","tagline":"Jewel of the south: a boating lake, coffee-scented viewpoints and the Kiliyur falls.","kw":["yercaud"],"cats":["Yercaud"],
+   "attractions":[
+     {"id":"yercaud-lake","name":"Yercaud Lake","type":"lake","cats":["Yercaud Lake"],"kw":["lake"],"needPlace":true},
+     {"id":"yercaud-views","name":"Viewpoints","type":"viewpoint","cats":["Yercaud"],"kw":["view","point","seat","peak"],"needPlace":true},
+     {"id":"kiliyur","name":"Kiliyur Falls","type":"waterfall","cats":["Kiliyur Falls"],"kw":["kiliyur","falls"],"needPlace":true}]},
+  {"id":"courtallam","name":"Courtallam","district":"Tenkasi","tagline":"The spa of South India: monsoon waterfalls you can bathe under, from Main Falls to Five Falls.","kw":["courtallam","kutralam","kuttalam","coutrallam"],"cats":["Courtallam waterfalls","Courtallam"],
+   "attractions":[
+     {"id":"main-falls","name":"Main Falls","type":"waterfall","cats":["Courtallam waterfalls"],"kw":["main fall","peraruvi"],"needPlace":true},
+     {"id":"five-falls","name":"Five Falls","type":"waterfall","cats":["Courtallam waterfalls"],"kw":["five fall","aintharuvi"],"needPlace":true}]},
+  {"id":"hogenakkal","name":"Hogenakkal","district":"Dharmapuri","tagline":"The smoking rocks: the Cauvery thunders through gorges, crossed in round coracle boats.","kw":["hogenakkal","hogenakal"],"cats":["Hogenakkal Falls"],
+   "attractions":[
+     {"id":"hogenakkal-falls","name":"Hogenakkal Falls","type":"waterfall","cats":["Hogenakkal Falls"],"kw":["hogenakkal","hogenakal"]},
+     {"id":"cauvery","name":"Cauvery River & Coracles","type":"nature","cats":["Hogenakkal Falls","Coracles in India"],"kw":["cauvery","kaveri","coracle"],"needPlace":true}]}
+]

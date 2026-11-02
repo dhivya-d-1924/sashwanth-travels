@@ -1,0 +1,2537 @@
+
+(()=>{
+"use strict";
+/* ================= helpers ================= */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const inr=n=>"₹"+Math.round(Number(n)||0).toLocaleString("en-IN");
+const todayISO=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date());
+const addDays=(iso,n)=>{const d=new Date(iso+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
+const fmtDate=iso=>{try{return new Date(iso+"T00:00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}catch{return iso}};
+const fmtTime=ms=>new Date(ms).toLocaleString("en-IN",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+const uid6=()=>Math.random().toString(36).slice(2,8).toUpperCase();
+const norm=s=>String(s||"").trim().toLowerCase().replace(/\s+/g," ");
+const PHONE=/^[+]?\d[\d ]{9,14}$/;
+const img=id=>id?"/_blob/"+id:"";
+function toast(msg,bad){const t=document.createElement("div");t.className="toast"+(bad?" bad":"");t.textContent=msg;$("#toasts").append(t);setTimeout(()=>t.remove(),5200)}
+function copy(text,btn){const done=()=>{const o=btn.textContent;btn.textContent="Copied";setTimeout(()=>btn.textContent=o,1400)};
+  const sel=()=>{const v=btn.parentElement.querySelector(".v");if(v){const r=document.createRange();r.selectNodeContents(v);const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Selected. Press Ctrl+C to copy.")}};
+  try{navigator.clipboard.writeText(text).then(done,sel)}catch{sel()}}
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+
+/* Shrink a photo before upload: max 1600px, JPEG. Keeps uploads fast on mobile data. */
+async function compress(file){
+  if(!/^image\/(jpeg|png|webp)$/.test(file.type))throw new Error("Use a JPG, PNG or WebP photo.");
+  if(file.size>20e6)throw new Error("Photo is over 20 MB.");
+  try{
+    const bmp=await createImageBitmap(file);const k=Math.min(1,1600/Math.max(bmp.width,bmp.height));
+    const c=document.createElement("canvas");c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);
+    c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+    return await new Promise(r=>c.toBlob(b=>r(b||file),"image/jpeg",.82));
+  }catch{return file}
+}
+async function uploadPhoto(file){
+  if(!S.assets)throw new Error("Photo upload isn't available for your access level.");
+  const blob=await compress(file);
+  const r=await S.assets.upload(blob,{type:blob.type||"image/jpeg"});
+  return r.id;
+}
+
+/* ================= sample data ================= */
+const SAMPLE={
+  sample:true,name:"Sashwanth Travels",phone:"",whatsapp:"",email:"",address:"",hours:"",
+  servedAreas:"Tamil Nadu, Puducherry; inter-state trips on request",
+  vehicles:[
+    {id:"sedan",name:"Sedan (Dzire / Etios class)",type:"sedan",seats:4,ac:true,count:3,ratePerKm:13,minKmPerDay:250,driverBata:400,luggage:"2 large bags"},
+    {id:"muv",name:"MUV (Ertiga class)",type:"suv",seats:6,ac:true,count:2,ratePerKm:15,minKmPerDay:250,driverBata:450,luggage:"3 bags"},
+    {id:"innova",name:"Innova Crysta",type:"suv",seats:7,ac:true,count:2,ratePerKm:19,minKmPerDay:250,driverBata:500,luggage:"4 bags + carrier"},
+    {id:"tt12",name:"Tempo Traveller 12-seater",type:"traveller",seats:12,ac:true,count:1,ratePerKm:24,minKmPerDay:300,driverBata:600,luggage:"Roof carrier"},
+    {id:"tt17",name:"Tempo Traveller 17-seater",type:"traveller",seats:17,ac:true,count:1,ratePerKm:28,minKmPerDay:300,driverBata:700,luggage:"Roof carrier"},
+    {id:"bus",name:"Mini Bus 26-seater",type:"bus",seats:26,ac:true,count:1,ratePerKm:38,minKmPerDay:300,driverBata:900,luggage:"Boot + carrier"}
+  ],
+  routes:[
+    {from:"Chennai",to:"Madurai",km:462,via:"Tindivanam, Villupuram, Trichy",stops:"Gingee Fort; Srirangam Ranganathaswamy Temple; Rockfort, Trichy; Meenakshi Amman Temple"},
+    {from:"Chennai",to:"Trichy",km:330,via:"Tindivanam, Villupuram, Perambalur",stops:"Gingee Fort; Samayapuram Mariamman Temple; Srirangam"},
+    {from:"Trichy",to:"Madurai",km:135,via:"Viralimalai, Melur",stops:"Viralimalai Murugan Temple; Thirupparankundram"},
+    {from:"Chennai",to:"Puducherry",km:150,via:"East Coast Road",stops:"Mahabalipuram Shore Temple; Auroville; Promenade Beach"},
+    {from:"Madurai",to:"Rameswaram",km:175,via:"Paramakudi, Mandapam",stops:"Pamban Bridge; Ramanathaswamy Temple; Dhanushkodi"},
+    {from:"Madurai",to:"Kodaikanal",km:120,via:"Batlagundu",stops:"Silver Cascade Falls; Coaker's Walk; Kodai Lake"},
+    {from:"Trichy",to:"Thanjavur",km:58,via:"NH 83",stops:"Brihadeeswarar Temple; Thanjavur Palace"}
+  ],
+  paymentMethods:["UPI","Bank transfer","Cash to driver"],upiId:"",bankDetails:"",
+  advancePercent:25,gstPercent:0,nightCharge:0,cancelCutoffHours:24,maxOpenRequests:3,
+  paymentTerms:"Advance to hold the vehicle; balance to the driver at trip end on actual km.",
+  extrasPolicy:"Tolls, parking and inter-state permit charged at actuals.",
+  kmPolicy:"Km counted garage to garage. Day = calendar day.",cancellationPolicy:""
+};
+const STATUS={
+  awaiting_payment:{l:"Awaiting advance",c:"warn",step:1},
+  payment_submitted:{l:"Payment sent — verifying",c:"info",step:2},
+  changes_requested:{l:"Owner needs info",c:"warn",step:1},
+  confirmed:{l:"Confirmed",c:"ok",step:3},
+  on_trip:{l:"On trip",c:"info",step:4},
+  completed:{l:"Completed",c:"ok",step:5},
+  rejected:{l:"Not available",c:"bad",step:0},
+  cancelled:{l:"Cancelled",c:"mut",step:0}
+};
+const OPEN=["awaiting_payment","payment_submitted","changes_requested"];
+const ROLE_LABEL={owner:"Owner",manager:"Manager",driver:"Driver",pending:"Staff · role not set",customer:"Customer",readonly:"Viewer",guest:"Guest"};
+/* What each role may do. The database rules enforce the customer/staff boundary;
+   manager/driver separation is enforced here, inside the staff area. */
+const PERMS={
+  owner:["notify","overview","bookings","travel","trips","fleet","business","routes","calendar","support","gallery","photos","team","ready"],
+  manager:["overview","bookings","travel","trips","fleet","business","routes","calendar","support","gallery","photos","ready"],
+  driver:["trips"],
+  pending:[],customer:[],readonly:[],guest:[]
+};
+
+/* ================= state ================= */
+const S={cfg:structuredClone(SAMPLE),db:null,user:null,uid:null,me:null,role:"guest",canWrite:null,sample:null,assets:null,
+  req:{profile:{},bookings:{},tickets:{}},dec:{bookings:{}},
+  allReq:{},allDec:{},customers:{},roles:{staff:{}},gallery:{items:{}},avail:{blocks:{}},
+  chat:LS.get("st.chat",[]),drafts:LS.get("st.drafts",{}),seen:LS.get("st.seen2",{}),
+  wiz:(()=>{const d={step:1,trip:{from:"",to:"",date:addDays(todayISO(),3),days:2,pax:2,type:"round",km:"",kmSrc:""},veh:null,cust:{name:"",phone:"",pickup:"",time:"06:00",notes:""},agree:false,last:null};
+    const sv=LS.get("st.wiz",null);if(!sv||!sv.trip)return d;const w={...d,...sv,trip:{...d.trip,...sv.trip},cust:{...d.cust,...sv.cust},agree:false};
+    if(w.step<5&&(!w.trip.date||w.trip.date<todayISO())){w.trip.date=d.trip.date;w.step=1}if(w.step===5&&!w.last)w.step=1;return w})(),
+  route:0,ownerTab:null,bkFilter:"open",busy:false,ready:false};
+const cfg=()=>S.cfg, isSample=()=>!!S.cfg.sample, veh=id=>cfg().vehicles.find(v=>v.id===id);
+const can=p=>(PERMS[S.role]||[]).includes(p);
+const isStaff=()=>["owner","manager","driver","pending"].includes(S.role);
+
+/* ================= business rules ================= */
+function findRoute(a,b){const A=norm(a),B=norm(b);if(!A||!B)return null;for(const r of cfg().routes||[]){const f=norm(r.from),t=norm(r.to);if((f===A&&t===B)||(f===B&&t===A))return{...r,km:Number(r.km)}}return null}
+const rateCard=v=>({ratePerKm:Number(v.ratePerKm),minKmPerDay:Number(v.minKmPerDay),driverBata:Number(v.driverBata),nightCharge:Number(cfg().nightCharge)||0,gstPercent:Number(cfg().gstPercent)||0,advancePercent:Number(cfg().advancePercent)||0});
+/* Outstation rule: chargeable km = max(running km, min km/day x days). Same function prices the estimate and the final bill. */
+function priceWith(rc,runKm,days){
+  days=Math.max(1,Math.round(Number(days)||1));
+  const minKm=rc.minKmPerDay*days,chargeKm=Math.max(Math.max(0,Number(runKm)||0),minKm);
+  const base=chargeKm*rc.ratePerKm,bata=rc.driverBata*days,night=rc.nightCharge*Math.max(0,days-1);
+  const sub=base+bata+night,gst=Math.round(sub*rc.gstPercent)/100,total=Math.round(sub+gst);
+  const advance=Math.min(total,Math.ceil(total*rc.advancePercent/100/10)*10);
+  return{runKm:Number(runKm)||0,minKm,chargeKm,rate:rc.ratePerKm,base,bata,night,gst,gstPercent:rc.gstPercent,total,advance,days};
+}
+function computeFare(v,oneWayKm,days,type){const ow=Math.max(0,Number(oneWayKm)||0);return{...priceWith(rateCard(v),type==="oneway"?ow:ow*2,days),type,extras:cfg().extrasPolicy||"",sample:isSample()}}
+function finalBill(b){
+  const t=b.trip||{};if(!(t.start&&t.end))return null;
+  const actualKm=Math.max(0,Number(t.end.km)-Number(t.start.km));
+  const p=priceWith(b.rc,actualKm,b.days);
+  const extras=Object.values(t.receipts||{}).reduce((s,r)=>s+(Number(r.amount)||0),0);
+  const paid=b.advancePaid?(b.lockedFare?.advance||0):0;
+  return{...p,actualKm,extras,grand:p.total+extras,paid,balance:p.total+extras-paid};
+}
+function availability(vehicleId,start,days,ignore){
+  const v=veh(vehicleId);if(!v)return{ok:false,reason:"Unknown vehicle"};
+  if(!start||start<todayISO())return{ok:false,reason:"Start date is in the past"};
+  const end=addDays(start,Math.max(1,days)-1);
+  const used=Object.entries(S.avail.blocks||{}).filter(([id,b])=>id!==ignore&&b.vehicleId===vehicleId&&!(b.to<start||b.from>end)).length;
+  const total=Number(v.count)||0,free=Math.max(0,total-used);
+  return{ok:free>0,free,total,from:start,to:end,reason:free>0?"":"All units are booked or blocked for these dates"};
+}
+function suitability(v,pax,days){const p=Number(pax)||1;if(!v||v.seats<p)return{fit:false,why:v?`Seats ${v.seats}, you need ${p}`:"Unknown vehicle"};const sp=v.seats-p;let why=sp===0?"Exact fit":`${sp} spare seat${sp>1?"s":""}`;if(days>=3&&!v.ac)why+=" · non-AC on a long trip";return{fit:true,why,score:sp+(v.ac?0:3)}}
+function recommend(pax,days){return cfg().vehicles.map(v=>({v,s:suitability(v,pax,days)})).filter(x=>x.s.fit).sort((a,b)=>a.s.score-b.s.score||a.v.ratePerKm-b.v.ratePerKm)}
+/* Merge what the customer asked for (their doc) with what the business decided (owner-only doc). */
+function effective(b,d){
+  d=d||{};let status;
+  if(["on_trip","completed","rejected"].includes(d.status))status=d.status;
+  else if(b.cancelledAt)status="cancelled";
+  else if(d.status==="changes_requested"&&b.payment&&b.payment.at>(d.at||0))status="payment_submitted";
+  else if(d.status)status=d.status;
+  else status=b.payment?"payment_submitted":"awaiting_payment";
+  return{...b,status,ownerNote:d.note||"",paidOnline:d.paidOnline||null,refund:d.refund||null,assign:d.assign||null,trip:d.trip||{},lockedFare:d.fare||null,advancePaid:!!d.advancePaid,rc:d.rc||b.rc,decidedAt:d.at||0};
+}
+const hoursToStart=b=>(new Date(b.date+"T"+(b.time||"06:00")+":00+05:30").getTime()-Date.now())/36e5;
+function cancelRule(b){
+  if(!["awaiting_payment","payment_submitted","changes_requested","confirmed"].includes(b.status))return{ok:false,why:"This trip can't be cancelled now."};
+  const cut=Number(cfg().cancelCutoffHours)||0,h=hoursToStart(b);
+  if(b.status==="confirmed"&&h<cut)return{ok:false,why:`Online cancellation closes ${cut} hours before pickup. Please call the owner.`};
+  return{ok:true};
+}
+function customerStats(uid){
+  const r=S.allReq[uid]||{},d=S.allDec[uid]||{};
+  const list=Object.entries(r.bookings||{}).map(([id,b])=>effective(b,(d.bookings||{})[id]));
+  return{total:list.length,completed:list.filter(b=>b.status==="completed").length,open:list.filter(b=>OPEN.includes(b.status)).length,cancelled:list.filter(b=>b.status==="cancelled").length};
+}
+const isTrusted=uid=>!!(S.customers[uid]?.verified)||customerStats(uid).completed>0;
+function missingInfo(){
+  const c=cfg(),m=[],real=!c.sample,chk=(ok,l)=>m.push({ok:!!ok,label:l});
+  chk(real,"Business Setup saved by the owner (replaces sample data)");chk(c.phone,"Owner / support phone number");chk(c.whatsapp||c.phone,"WhatsApp number");chk(c.email,"Support email");chk(c.address,"Office address");chk(c.hours,"Working hours");
+  chk(real&&c.vehicles?.length,"Real vehicle list with unit counts");chk(c.vehicles?.every(v=>v.ratePerKm>0&&v.minKmPerDay>0),"Per-km rate and daily minimum km for each vehicle");chk(c.vehicles?.some(v=>v.photoId),"At least one real vehicle photo");
+  chk(c.upiId||c.bankDetails,"UPI ID or bank details for the advance");chk(real&&c.advancePercent>0,"Advance percentage");chk(c.cancellationPolicy,"Cancellation and refund policy");
+  chk(real&&c.extrasPolicy,"Toll, parking, permit and night-charge rules");chk(real&&c.routes?.length,"Route table with road km");
+  chk(Object.values(S.roles.staff||{}).some(s=>s.role==="driver"),"At least one driver added under Team & roles");
+  return m;
+}
+function blockFix(g,a){
+  if(!g.ok&&isSample())return S.role==="owner"?`<a class="btn sm primary" href="#owner" data-gobiz="1">Open Business setup and publish</a>`:`<span class="small">The owner hasn't opened online bookings yet. Please call ${esc(cfg().phone||"us")}.</span>`;
+  if(!g.ok&&S.role==="guest")return`<button class="btn sm primary" type="button" data-wstep="3">Sign in</button>`;
+  if(!g.ok&&/unpaid requests/.test(g.why))return`<a class="btn sm primary" href="#trips">Open My Trips</a>`;
+  if(!a.ok)return`<button class="btn sm primary" type="button" data-wstep="1">Change date</button> <button class="btn sm" type="button" data-wstep="2">Choose another vehicle</button>`;
+  return"";
+}
+function canBook(){
+  if(isSample())return{ok:false,why:"Booking requests open once the owner replaces the sample data with real vehicles and rates."};
+  if(S.role==="guest")return{ok:false,why:"Sign in to book. Your trips stay linked to your account."};
+  if(S.role==="readonly")return{ok:false,why:"Your access is view-only. Ask the owner for booking access, or call to book."};
+  if(isStaff()&&S.role!=="owner")return{ok:false,why:"Staff accounts can't place customer bookings. Use a customer account or add it by phone."};
+  const open=Object.entries(S.req.bookings||{}).map(([id,b])=>effective(b,S.dec.bookings?.[id])).filter(b=>OPEN.includes(b.status)).length;
+  const max=Number(cfg().maxOpenRequests)||3;
+  if(open>=max)return{ok:false,why:`You have ${open} unpaid requests. Pay or cancel one before sending another.`};
+  return{ok:true};
+}
+const profileOK=()=>!!(S.req.profile?.name&&PHONE.test(S.req.profile?.phone||""));
+
+/* ================= vehicle & destination art ================= */
+function vehicleSVG(type){
+  const body="var(--ink)",glass="var(--sunk)",acc="var(--accent)";
+  const wheel=x=>`<g class="wheel"><circle cx="${x}" cy="74" r="11" fill="${body}"/><circle cx="${x}" cy="74" r="5" fill="${glass}"/><path d="M${x-5} 74h10M${x} 69v10" stroke="${body}" stroke-width="1.5"/></g>`;
+  const sh={
+    sedan:`<path d="M14 64 Q16 52 34 50 L62 36 Q70 32 96 32 L132 32 Q146 34 160 48 L184 52 Q196 54 196 66 L196 72 L14 72 Z" fill="${body}"/><path d="M68 40 L96 36 L96 50 L58 50 Z M102 36 L130 36 Q140 38 150 50 L102 50 Z" fill="${glass}"/><rect x="186" y="58" width="8" height="5" rx="2" fill="${acc}"/>${wheel(52)}${wheel(158)}`,
+    suv:`<path d="M12 70 L12 50 Q14 42 30 40 L52 24 Q58 20 70 20 L160 20 Q172 22 180 40 L194 46 Q198 50 198 60 L198 72 L12 72 Z" fill="${body}"/><path d="M58 28 L86 26 L86 42 L42 42 Z M92 26 L128 26 L128 42 L92 42 Z M134 26 L160 26 Q168 30 172 42 L134 42 Z" fill="${glass}"/><rect x="188" y="52" width="8" height="5" rx="2" fill="${acc}"/><rect x="60" y="14" width="90" height="4" rx="2" fill="${body}"/>${wheel(50)}${wheel(162)}`,
+    traveller:`<path d="M8 72 L8 22 Q8 14 18 14 L170 14 Q182 14 188 28 L198 50 Q200 56 200 64 L200 72 Z" fill="${body}"/><path d="M18 22h28v18H18zM52 22h28v18H52zM86 22h28v18H86zM120 22h28v18h-28z M154 22h18q8 2 12 18h-30z" fill="${glass}"/><rect x="8" y="48" width="192" height="3" fill="${acc}"/>${wheel(42)}${wheel(166)}`,
+    bus:`<path d="M6 72 L6 16 Q6 8 14 8 L188 8 Q198 8 200 18 L202 72 Z" fill="${body}"/><path d="M14 16h24v20H14zM44 16h24v20H44zM74 16h24v20H74zM104 16h24v20h-24zM134 16h24v20h-24zM164 16h30v28h-30z" fill="${glass}"/><rect x="6" y="50" width="196" height="4" fill="${acc}"/>${wheel(40)}${wheel(170)}`};
+  return`<svg viewBox="0 0 210 90" aria-hidden="true">${sh[type]||sh.sedan}</svg>`;
+}
+const PAL=[["#3B1F4A","#C2412D","#F2B233"],["#0F3B45","#2F7F6E","#E9C46A"],["#2A1E3D","#8C3B5A","#F4A259"],["#14324A","#3E7CB1","#F2D398"],["#253A1F","#5C8D3B","#F2B233"]];
+function destArt(seed,kind){const p=PAL[seed%PAL.length];let s;
+  if(kind==="temple")s=`<path d="M120 190 L120 120 L130 120 L130 100 L140 100 L140 80 L150 80 L150 60 L160 40 L170 60 L170 80 L180 80 L180 100 L190 100 L190 120 L200 120 L200 190 Z" fill="${p[0]}" opacity=".85"/>`;
+  else if(kind==="hill")s=`<path d="M0 190 L60 110 L100 150 L160 70 L230 160 L280 120 L320 190 Z" fill="${p[0]}" opacity=".85"/>`;
+  else if(kind==="sea")s=`<path d="M0 150 Q40 140 80 150 T160 150 T240 150 T320 150 L320 200 L0 200 Z" fill="${p[0]}" opacity=".85"/>`;
+  else s=`<rect x="70" y="110" width="40" height="80" fill="${p[0]}"/><rect x="120" y="80" width="60" height="110" fill="${p[0]}" opacity=".9"/><rect x="190" y="100" width="45" height="90" fill="${p[0]}"/>`;
+  return`<svg class="bgart" viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="g${seed}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${p[0]}"/><stop offset=".7" stop-color="${p[1]}"/><stop offset="1" stop-color="${p[2]}"/></linearGradient></defs><rect width="320" height="200" fill="url(#g${seed})"/><circle cx="250" cy="60" r="26" fill="${p[2]}" opacity=".9"/>${s}</svg>`}
+function kindFor(n){n=norm(n);if(/kodai|ooty|hill|falls|lake|walk/.test(n))return"hill";if(/rameswaram|dhanushkodi|beach|puducherry|mahabalipuram|promenade|pamban|auroville/.test(n))return"sea";if(/temple|srirangam|meenakshi|brihadee|murugan|mariamman|ramanatha|parankundram/.test(n))return"temple";return"fort"}
+const galleryFor=place=>{const P=norm(place);return Object.values(S.gallery.items||{}).sort((a,b)=>b.at-a.at).find(g=>g.place&&(norm(g.place)===P||P.includes(norm(g.place))||norm(g.place).includes(P)))};
+
+/* ================= boot & live data ================= */
+async function boot(){
+  renderAll();initChat();
+  const C=window.claude;
+  if(!C||!C.use){setAgentStatus(false,"AI needs the Claude viewer — the booking form works below");renderAccount();routeReady();return}
+  const [db,user,sample,assets]=await Promise.all([C.use("db"),C.use("user"),C.use("sample"),C.use("assets")]);
+  Object.assign(S,{db,user,sample,assets});
+  setAgentStatus(!!sample,sample?"Online · voice & text":"AI unavailable here — use the booking form");
+  let owner=false,edit=false;
+  if(user){
+    try{S.uid=await user.id()}catch{}
+    try{owner=!!(await user.isOwner())}catch{} try{edit=!!(await user.canEdit())}catch{}
+    try{S.canWrite=await user.can("data.write")}catch{S.canWrite=null}
+    try{S.me=await user.me()}catch{}
+  }
+  S.role=!S.uid?"guest":owner?"owner":edit?"pending":S.canWrite===false?"readonly":"customer";
+  renderAccount();
+  if(LS.get("st.resume",0)&&S.role!=="guest"){LS.set("st.resume",0);setTimeout(()=>toast("Signed in. Continue your booking where you left off."),700)}
+  routeReady();
+  if(!db){renderAll();return}
+  db.doc("site/config").onSnapshot(s=>{S.cfg=s.exists?{...structuredClone(SAMPLE),...structuredClone(s.data()),sample:!!s.data().sample}:structuredClone(SAMPLE);renderAll();renderOwner()},()=>{});
+  db.doc("site/availability").onSnapshot(s=>{S.avail=s.exists?structuredClone(s.data()):{blocks:{}};S.avail.blocks=S.avail.blocks||{};renderWizard();renderOwner()},()=>{});
+  db.doc("site/gallery").onSnapshot(s=>{const before=Object.keys(S.gallery.items||{}).length;S.gallery=s.exists?structuredClone(s.data()):{items:{}};S.gallery.items=S.gallery.items||{};
+    const now=Object.keys(S.gallery.items).length;if(S.ready&&now>before)toast("New photo added to the gallery");renderGallery();renderRoutes();renderPlaces();renderOwner()},()=>{});
+  db.doc("site/roles").onSnapshot(s=>{S.roles=s.exists?structuredClone(s.data()):{staff:{}};S.roles.staff=S.roles.staff||{};
+    if(edit&&!owner){const r=S.roles.staff[S.uid]?.role;S.role=r==="manager"||r==="driver"?r:"pending"}
+    renderAccount();renderOwner();renderAll()},()=>{});
+  if(S.uid&&!isStaff()||S.role==="owner"){
+    db.doc("requests/"+S.uid).onSnapshot(s=>{const d=s.exists?structuredClone(s.data()):{};S.req={profile:d.profile||{},bookings:d.bookings||{},tickets:d.tickets||{},plan:d.plan||null,prefs:d.prefs||{}};
+      if(!S.wiz.cust.name&&S.req.profile.name)Object.assign(S.wiz.cust,{name:S.req.profile.name,phone:S.req.profile.phone||""});
+      notifyMine();renderTrips();renderAccount();renderWizard();renderPrefs();renderBell();if(!document.activeElement?.closest?.("#plannerBody"))renderPlanner()},()=>{});
+    db.doc("travel/"+S.uid).onSnapshot(s=>{const prev=TR.doc.bookings||{};TR.doc=s.exists?structuredClone(s.data()):{bookings:{}};TR.doc.bookings=TR.doc.bookings||{};
+      if(S.ready)for(const [id,b] of Object.entries(TR.doc.bookings)){const was=prev[id]?.status;if(was&&was!==b.status)toast(`${b.ref}: ${TST[b.status]?.l||b.status}`,/^failed/.test(b.status))}
+      renderTravelTrips();renderBell();const h=routeHash();if(h in TROUTE&&!(h==="trip-details"))renderTravelCk(h);
+      if(h==="trip-pay"&&TR.doc.bookings[TR.bid]&&TR.doc.bookings[TR.bid].status!=="awaiting_payment"){history.replaceState(null,"","#trip-confirmed");renderTravelCk("trip-confirmed")}},()=>{});
+    db.doc("decisions/"+S.uid).onSnapshot(s=>{S.dec=s.exists?structuredClone(s.data()):{bookings:{}};S.dec.bookings=S.dec.bookings||{};notifyMine();renderTrips();renderBell();if(S.wiz.step===5)renderWizard()},()=>{});
+  }
+  if(["owner","manager","driver","pending"].includes(S.role)||edit){
+    db.collection("requests").onSnapshot(q=>{
+      const before=new Set(Object.values(S.allReq).flatMap(r=>Object.keys(r.bookings||{})));
+      S.allReq=Object.fromEntries(q.docs.map(d=>[d.id,structuredClone(d.data())]));
+      if(S.ready&&before.size&&can("bookings"))Object.values(S.allReq).flatMap(r=>Object.entries(r.bookings||{})).filter(([k])=>!before.has(k)).forEach(([,b])=>toast(`New booking request ${b.ref} · ${b.from} → ${b.to}`));
+      autoRelease();renderOwner()},()=>{});
+    db.collection("decisions").onSnapshot(q=>{S.allDec=Object.fromEntries(q.docs.map(d=>[d.id,structuredClone(d.data())]));
+      if(S.role==="driver"&&S.ready){const mine=allBookings().filter(b=>b.assign?.driverId===S.uid&&b.status==="confirmed");const key="st.duty";const seen=LS.get(key,[]);mine.filter(b=>!seen.includes(b.id)).forEach(b=>toast(`New trip assigned: ${b.ref} on ${fmtDate(b.date)}`));LS.set(key,mine.map(b=>b.id))}
+      renderOwner()},()=>{});
+    db.collection("travel").onSnapshot(q=>{TR.all=Object.fromEntries(q.docs.map(d=>[d.id,structuredClone(d.data())]));if(S.ownerTab==="travel")renderOwner()},()=>{});
+    db.collection("customers").onSnapshot(q=>{S.customers=Object.fromEntries(q.docs.map(d=>[d.id,structuredClone(d.data())]));renderOwner()},()=>{});
+  }
+  setTimeout(()=>{S.ready=true},2500);
+}
+function setAgentStatus(live,t){$("#avatar").classList.toggle("live",live);$("#agentStatus").textContent="Booking agent · "+t}
+function myBookings(){return Object.entries(S.req.bookings||{}).map(([id,b])=>({id,...effective(b,S.dec.bookings?.[id])})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))}
+function notifyMine(){
+  for(const b of myBookings()){
+    const sig=b.status+"|"+Object.keys(b.trip?.photos||{}).length+"|"+(b.trip?.start?1:0)+(b.trip?.end?1:0)+"|"+(b.assign?.driverId||"");
+    const prev=S.seen[b.id];
+    if(prev&&prev!==sig){
+      const [ps,pp]=prev.split("|");
+      if(ps!==b.status)toast(`${b.ref}: ${STATUS[b.status]?.l||b.status}`);
+      else if(Number(pp)<Object.keys(b.trip?.photos||{}).length)toast(`${b.ref}: new trip photo from your driver`);
+      else if(b.assign&&!prev.endsWith(b.assign.driverId))toast(`${b.ref}: driver assigned`);
+    }
+    S.seen[b.id]=sig;
+  }
+  LS.set("st.seen2",S.seen);
+  const n=myBookings().filter(b=>["awaiting_payment","changes_requested"].includes(b.status)).length;
+  $("#tripBadge").hidden=!n;$("#tripBadge").textContent=n;
+}
+function allBookings(){
+  return Object.entries(S.allReq).flatMap(([uid,r])=>Object.entries(r.bookings||{}).map(([id,b])=>({id,uid,...effective(b,(S.allDec[uid]?.bookings||{})[id])}))).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+}
+/* When a customer cancels a confirmed trip, the staff view frees the vehicle (customers can't write the calendar). */
+async function autoRelease(){
+  if(!can("calendar"))return;
+  const gone=allBookings().filter(b=>["cancelled","rejected","completed"].includes(b.status)&&S.avail.blocks?.[b.id]);
+  if(!gone.length)return;
+  const nb={...S.avail.blocks};gone.forEach(b=>delete nb[b.id]);
+  try{await S.db.doc("site/availability").set({blocks:nb})}catch{}
+}
+
+/* ================= customer writes ================= */
+async function writeDoc(path,patch){const ref=S.db.doc(path);const s=await ref.get();patch.updatedAt=Date.now();if(s.exists)await ref.update(patch);else await ref.set({createdAt:Date.now(),...patch})}
+async function saveProfile(p){
+  if(!S.db||!S.uid)throw new Error("Sign in first.");
+  if(!p.name?.trim())throw new Error("Enter your name.");
+  if(!PHONE.test(p.phone||""))throw new Error("Enter a valid mobile number.");
+  await writeDoc("requests/"+S.uid,{profile:{name:p.name.trim(),phone:p.phone.trim(),altPhone:(p.altPhone||"").trim(),city:(p.city||"").trim(),lang:p.lang||"en-IN",updatedAt:Date.now()}});
+}
+async function submitBooking(d){
+  const g=canBook();if(!g.ok){toast(g.why,true);return null}
+  const v=veh(d.vehicleId);if(!v){toast("Choose a vehicle.",true);return null}
+  const a=availability(v.id,d.date,d.days);if(!a.ok){toast(a.reason,true);return null}
+  if(!suitability(v,d.pax).fit){toast(`${v.name} seats only ${v.seats}.`,true);return null}
+  try{if(!profileOK()||S.req.profile.name!==d.name||S.req.profile.phone!==d.phone)await saveProfile({...S.req.profile,name:d.name,phone:d.phone})}catch(e){toast(e.message,true);return null}
+  const r=findRoute(d.from,d.to);const km=r?r.km:Number(d.km);
+  const f=computeFare(v,km,d.days,d.type);
+  const id="b"+Date.now().toString(36)+uid6().toLowerCase();
+  const ref="ST-"+d.date.replaceAll("-","").slice(2)+"-"+uid6().slice(0,4);
+  const b={ref,from:d.from,to:d.to,date:d.date,endDate:addDays(d.date,d.days-1),days:d.days,pax:d.pax,type:d.type,km,kmSrc:r?"route_table":(d.kmSrc||"customer"),
+    vehicleId:v.id,vehicleName:v.name,rc:rateCard(v),fare:{total:f.total,advance:f.advance,chargeKm:f.chargeKm},
+    name:d.name,phone:d.phone,pickup:d.pickup||"",time:d.time||"",notes:d.notes||"",source:d.source||"form",createdAt:Date.now()};
+  try{await writeDoc("requests/"+S.uid,{bookings:{[id]:b}});toast(`Request ${ref} sent. Pay the advance to hold the vehicle.`);return{id,...b}}
+  catch(e){toast(e.code==="invalid_argument"?"Your access can't save bookings here. Please call the owner.":"Couldn't send the request. Try again.",true);return null}
+}
+async function submitPayment(id,utr,method,file){
+  let proofId="";
+  if(file){try{toast("Uploading payment screenshot…");proofId=await uploadPhoto(file)}catch(e){toast(e.message,true);return}}
+  try{await writeDoc("requests/"+S.uid,{bookings:{[id]:{payment:{utr,method,proofId,at:Date.now()}}}});toast("Payment details sent. The owner will verify and confirm.")}
+  catch{toast("Couldn't save the payment details. Try again.",true)}
+}
+async function cancelMine(id){
+  const b=myBookings().find(x=>x.id===id);const r=cancelRule(b);if(!r.ok)return toast(r.why,true);
+  try{await writeDoc("requests/"+S.uid,{bookings:{[id]:{cancelledAt:Date.now()}}});toast("Booking cancelled.")}catch{toast("Couldn't cancel. Call the owner.",true)}
+}
+async function sendTicket(t){
+  if(!S.db||!S.uid||S.role==="readonly")return{ok:false};
+  const id="t"+Date.now().toString(36);
+  try{await writeDoc("requests/"+S.uid,{tickets:{[id]:{...t,at:Date.now()}}});return{ok:true}}catch{return{ok:false}}
+}
+
+/* ================= staff writes (decisions/*) ================= */
+async function decide(uid,id,patch,logText){
+  const d={...patch,at:Date.now(),by:S.uid,log:{[Date.now()]:`${ROLE_LABEL[S.role]}: ${logText}`}};
+  await writeDoc("decisions/"+uid,{bookings:{[id]:d}});
+}
+async function staffAct(act,uid,id,btn){
+  const b=allBookings().find(x=>x.id===id&&x.uid===uid);if(!b)return;
+  const note=$(`[data-onote="${CSS.escape(id)}"]`)?.value.trim()||"";
+  btn.disabled=true;
+  try{
+    if(act==="confirm"||act==="confirm_noadv"){
+      if(act==="confirm_noadv"&&!isTrusted(uid))throw new Error("Only verified or returning customers can be confirmed without an advance.");
+      const a=availability(b.vehicleId,b.date,b.days,id);if(!a.ok)throw new Error(a.reason+". Add a unit, change vehicle, or decline.");
+      const v=veh(b.vehicleId);const rc=v?rateCard(v):b.rc;const f=priceWith(rc,b.type==="oneway"?b.km:b.km*2,b.days);
+      await decide(uid,id,{status:"confirmed",note,advancePaid:act==="confirm",rc,fare:{total:f.total,advance:f.advance,chargeKm:f.chargeKm}},act==="confirm"?"payment verified, confirmed":"confirmed without advance");
+      const blk={[id]:{vehicleId:b.vehicleId,from:b.date,to:b.endDate,reason:"Booking "+b.ref}};
+      const s=await S.db.doc("site/availability").get();if(s.exists)await S.db.doc("site/availability").update({blocks:blk});else await S.db.doc("site/availability").set({blocks:blk});
+    }else if(act==="changes_requested"){if(!note)throw new Error("Write what you need from the customer in the note.");await decide(uid,id,{status:"changes_requested",note},"asked for info")}
+    else if(act==="rejected"||act==="cancelled"){await decide(uid,id,{status:act,note},act);if(S.avail.blocks?.[id]){const nb={...S.avail.blocks};delete nb[id];await S.db.doc("site/availability").set({blocks:nb})}}
+    toast(`${b.ref} updated. The customer sees it now.`);
+  }catch(e){toast(e.message||"Couldn't update.",true)}finally{btn.disabled=false}
+}
+async function assignDriver(uid,id){
+  const sel=$(`[data-drv="${CSS.escape(id)}"]`),no=$(`[data-vno="${CSS.escape(id)}"]`);
+  const sid=sel?.value;if(!sid)return toast("Pick a driver.",true);
+  const st=S.roles.staff[sid];if(!st)return toast("That driver isn't on the team any more.",true);
+  const vno=(no?.value||"").trim().toUpperCase();
+  if(!/^[A-Z]{2}[ -]?\d{1,2}[ -]?[A-Z]{0,3}[ -]?\d{1,4}$/.test(vno))return toast("Enter the vehicle number like TN 45 AB 1234.",true);
+  const me=allBookings().find(x=>x.id===id);if(!me)return;
+  const clash=allBookings().find(o=>o.id!==id&&o.assign?.driverId===sid&&["confirmed","on_trip"].includes(o.status)&&!(o.endDate<me.date||o.date>me.endDate));
+  if(clash)return toast(`${st.name} is already on ${clash.ref} for overlapping dates.`,true);
+  try{await decide(uid,id,{assign:{driverId:sid,driverName:st.name,driverPhone:st.phone||"",vehicleNo:vno,at:Date.now()}},`assigned ${st.name} · ${vno}`);toast("Driver assigned. The customer can see driver and vehicle details.")}
+  catch{toast("Couldn't assign the driver.",true)}
+}
+/* Trip sheet: photos drive the trip forward and produce the final bill. */
+async function tripAction(kind,uid,id,box){
+  const b=allBookings().find(x=>x.id===id&&x.uid===uid);if(!b)return;
+  if(S.role==="driver"&&b.assign?.driverId!==S.uid)return toast("This trip isn't assigned to you.",true);
+  const file=box.querySelector("[data-tfile]")?.files?.[0];
+  const km=Number(box.querySelector("[data-tkm]")?.value);
+  const amount=Number(box.querySelector("[data-tamt]")?.value);
+  const label=(box.querySelector("[data-tlabel]")?.value||"").trim();
+  try{
+    if(!file)throw new Error("Take or choose a photo first.");
+    if(kind==="start"){
+      if(b.status!=="confirmed")throw new Error("Only confirmed trips can start.");
+      if(!b.assign)throw new Error("Assign a driver before starting.");
+      if(b.date>todayISO())throw new Error(`This trip starts on ${fmtDate(b.date)}.`);
+      if(!(km>0))throw new Error("Enter the starting odometer reading.");
+    }
+    if(kind==="end"){
+      if(b.status!=="on_trip")throw new Error("Start the trip first.");
+      if(!(km>Number(b.trip.start.km)))throw new Error(`End reading must be above the start reading (${b.trip.start.km} km).`);
+      if(km-Number(b.trip.start.km)>3000)throw new Error("That's over 3,000 km for one trip. Check the reading.");
+    }
+    if(kind==="receipt"){if(!(amount>0))throw new Error("Enter the receipt amount.");if(!label)throw new Error("Say what the receipt is for (toll, parking, permit).")}
+    toast("Uploading photo…");
+    const pid=await uploadPhoto(file);const at=Date.now();const pkey="p"+at.toString(36);
+    const trip={photos:{[pkey]:{id:pid,kind,at,by:S.uid,caption:kind==="pickup"?"Vehicle at pickup":kind==="start"?`Odometer at start · ${km} km`:kind==="end"?`Odometer at end · ${km} km`:`${label} · ${inr(amount)}`}}};
+    let patch={trip},log="added a "+kind+" photo";
+    if(kind==="start"){trip.start={km,photo:pid,at};patch.status="on_trip";log=`started trip at ${km} km`}
+    if(kind==="end"){trip.end={km,photo:pid,at};patch.status="completed";log=`ended trip at ${km} km`}
+    if(kind==="receipt"){trip.receipts={[pkey]:{amount,label,photo:pid,at}};log=`added ${label} receipt ${inr(amount)}`}
+    await decide(uid,id,patch,log);
+    if(kind==="end"&&S.avail.blocks?.[id]&&can("calendar")){const nb={...S.avail.blocks};delete nb[id];await S.db.doc("site/availability").set({blocks:nb})}
+    toast(kind==="end"?"Trip completed. Final bill is ready for the customer.":"Saved. The customer sees it now.");
+  }catch(e){toast(e.message||"Couldn't save.",true)}
+}
+
+/* ================= render: public sections ================= */
+function renderAll(){
+  const c=cfg(),vs=c.vehicles||[];
+  $("#sampleBanner").hidden=!isSample();
+  $("#brandName").textContent=c.name||"Sashwanth Travels";$("#footName").textContent=`© ${new Date().getFullYear()} ${c.name||"Sashwanth Travels"}`;if($("#footBrand"))$("#footBrand").textContent=c.name||"Sashwanth Travels";
+  $("#odoVeh").textContent=String(vs.length).padStart(2,"0");
+  $("#odoSeats").textContent=vs.length?String(Math.max(...vs.map(v=>v.seats))).padStart(2,"0"):"--";
+  $("#odoRate").textContent=vs.length?inr(Math.min(...vs.map(v=>v.ratePerKm))):"--";
+  renderFleet();renderRoutes();renderPay();renderContact();renderWizard();renderTrips();renderGallery();renderPlaces();renderTicker();renderTrust();renderCTA();renderTravel();renderSocial();renderMusic();renderContactQuick();renderFooter();renderBell();renderPrefs();if(!document.activeElement?.closest?.("#plannerBody"))renderPlanner();
+}
+function vehicleCard(v,o={}){
+  const s=o.pax?suitability(v,o.pax,o.days):null;
+  const art=v.photoId?`<img src="${img(v.photoId)}" alt="${esc(v.name)}" loading="lazy">`:vehicleSVG(v.type);
+  return`<article class="panel vcard${o.pick?" pick":""}${s&&!s.fit?" unfit":""}" ${o.pick?`role="button" tabindex="0" data-pick="${esc(v.id)}" aria-pressed="${o.selected?"true":"false"}"`:""}>
+    <div class="art${v.photoId?" photo":""}">${art}${v.photoId?'<span class="live-tag">Real photo</span>':""}</div>
+    <div class="body"><div class="row">${isSample()?'<span class="chip sample">Sample</span>':""}<span class="chip mut">${v.ac?"AC":"Non-AC"}</span>${o.avail?`<span class="chip ${o.avail.ok?"ok":"bad"}">${o.avail.ok?o.avail.free+" free":"Booked"}</span>`:`<span class="chip mut">${v.count} in fleet</span>`}${s?`<span class="chip ${s.fit?"info":"bad"}">${esc(s.why)}</span>`:""}</div>
+      <h3>${esc(v.name)}</h3><div class="specs"><div><b>${v.seats}</b>seats</div><div><b>${v.minKmPerDay}</b>min km/day</div><div><b>${inr(v.driverBata)}</b>bata/day</div></div>
+      ${v.luggage?`<p class="small muted">Luggage: ${esc(v.luggage)}</p>`:""}
+      <div class="price">${o.fare?`<b>${inr(o.fare.total)}</b><span class="small muted">est. total · ${o.fare.chargeKm} km</span>`:`<b>${inr(v.ratePerKm)}</b><span class="small muted">per km</span>`}</div></div></article>`;
+}
+function fitText(v){return v.seats<=4?"Best for 1–4 people, airport runs and couples.":v.seats<=7?"Best for families of 5–7 on multi-day temple and hill trips.":v.seats<=17?`Best for groups of 8–${v.seats} with luggage on the roof carrier.`:`Best for ${Math.min(18,v.seats)}–${v.seats} people: weddings, school and office trips.`}
+function renderFleet(){
+  $("#fleetGrid").innerHTML=(cfg().vehicles||[]).map(v=>{
+    const art=v.photoId?`<img src="${img(v.photoId)}" alt="${esc(v.name)}" loading="lazy">`:vehicleSVG(v.type);
+    return`<article class="flip" tabindex="0" data-flip="${esc(v.id)}" aria-label="${esc(v.name)}">
+      <div class="flip-inner">
+        <div class="face"><div class="art${v.photoId?" photo":""}">${art}${v.photoId?'<span class="live-tag">Real photo</span>':""}</div>
+          <div class="body"><div class="row" style="display:flex;flex-wrap:wrap;gap:6px">${isSample()?'<span class="chip sample">Sample</span>':""}<span class="chip mut">${v.ac?"AC":"Non-AC"}</span><span class="chip mut">${v.seats} seats</span></div>
+          <h3>${esc(v.name)}</h3><div class="price" style="display:flex;align-items:baseline;gap:6px;margin-top:auto"><b class="num" style="font-size:1.4rem">${inr(v.ratePerKm)}</b><span class="small muted">per km</span></div><div class="front-actions"><button type="button" class="btn sm primary" data-bookveh="${esc(v.id)}">Book this vehicle</button><button type="button" class="btn sm" data-flipbtn="1" aria-label="Show details for ${esc(v.name)}">Details</button></div></div></div>
+        <div class="face back"><h3>${esc(v.name)}</h3>
+          <div class="bgrid"><div><b>${v.seats}</b>seats</div><div><b>${v.ac?"AC":"Non-AC"}</b>climate</div><div><b>${inr(v.ratePerKm)}</b>per km</div><div><b>${v.minKmPerDay}</b>min km / day</div><div><b>${inr(v.driverBata)}</b>driver bata / day</div><div><b>${v.count}</b>in fleet</div></div>
+          <p class="small" style="opacity:.85">${esc(fitText(v))}${v.luggage?" Luggage: "+esc(v.luggage)+".":""}</p>
+          <div class="front-actions" style="margin-top:auto"><button type="button" class="btn primary" data-bookveh="${esc(v.id)}">Book this vehicle</button><button type="button" class="btn ghost" data-flipbtn="1" style="color:inherit;border-color:currentColor">← Back</button></div></div>
+      </div></article>`}).join("")||'<div class="empty">The owner hasn\'t listed vehicles yet.</div>';
+}
+/* ---------- destinations carousel (3D ring) ---------- */
+const CAR={idx:0,paused:false,visible:true,timer:null,list:[]};
+function destinations(){
+  const seen=new Map();
+  for(const r of cfg().routes||[]){
+    const stops=String(r.stops||"").split(";").map(x=>x.trim()).filter(Boolean);
+    const sub=stops[stops.length-1]||("From "+r.from);
+    if(!seen.has(norm(r.to)))seen.set(norm(r.to),{name:r.to,sub,from:r.from,km:r.km});
+  }
+  return[...seen.values()].slice(0,10).map((d,i)=>{const g=galleryFor(d.name)||galleryFor(d.sub),ex=g?null:(exPhotoFor(d.name)||exPhotoFor(d.sub));return{...d,photo:g?.id||"",ex,kind:kindFor(d.sub+" "+d.name),seed:i}});
+}
+function renderPlaces(){
+  const list=destinations();CAR.list=list;const n=list.length;const ring=$("#ring");if(!ring)return;
+  $("#places").hidden=n<2;if(n<2)return;
+  const step=360/n,rad=Math.max(330,Math.round(150/Math.tan(Math.PI/n)));CAR.rad=rad;CAR.step=step;
+  ring.innerHTML=list.map((d,i)=>`<button type="button" class="rcard" data-car="${i}" style="transform:rotateY(${i*step}deg) translateZ(${rad}px)" aria-label="${esc(d.name)}, ${esc(d.sub)}">
+    <span class="scene">${d.photo?`<img src="${img(d.photo)}" alt="" loading="lazy">`:d.ex?exImg(d.ex,"300px",{alt:""}):destArt(d.seed+3,d.kind)}</span>
+    ${d.photo||d.ex?'<span class="live-tag">Real photo</span>':""}
+    <span class="cap"><small>${esc(d.sub)}</small><b>${esc(d.name)}</b><em>Book this trip →</em></span></button>`).join("");
+  $("#cdots").innerHTML=list.map((d,i)=>`<button type="button" class="cdot" data-cdot="${i}" aria-label="Show ${esc(d.name)}"></button>`).join("");
+  updateRing();
+}
+function carActive(){const n=CAR.list.length;return((CAR.idx%n)+n)%n}
+function updateRing(){
+  const n=CAR.list.length;if(n<2)return;const a=carActive();
+  $("#ring").style.transform=`translateZ(-${CAR.rad}px) rotateY(${-CAR.idx*CAR.step}deg)`;
+  $$("#ring .rcard").forEach((el,i)=>{const dist=Math.min(Math.abs(i-a),n-Math.abs(i-a));el.style.opacity=dist===0?1:dist===1?.72:.38;el.classList.toggle("active",i===a);el.tabIndex=dist===0?0:-1});
+  $$("#cdots .cdot").forEach((el,i)=>el.setAttribute("aria-current",String(i===a)));
+  const d=CAR.list[a];$("#carNow").innerHTML=`Now showing <b>${esc(d.name)}</b> · ${esc(d.sub)}${d.km?` · ${d.km} km from ${esc(d.from)}`:""}${d.ex?`<br><span class="small" style="opacity:.8">${esc(d.ex.attraction)} · ${exCredit(d.ex)}</span>`:""}`;
+}
+function carGo(i){const n=CAR.list.length,cur=carActive();let d=i-cur;if(d>n/2)d-=n;if(d<-n/2)d+=n;CAR.idx+=d;updateRing()}
+function carStart(){
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+  clearInterval(CAR.timer);CAR.timer=setInterval(()=>{if(!CAR.paused&&CAR.visible&&!document.hidden){CAR.idx++;updateRing()}},3600);
+}
+function renderTicker(){
+  const rs=(cfg().routes||[]).map(r=>`<span>${esc(r.from)} → ${esc(r.to)}</span><i>✦</i>`).join("");
+  $("#ticker").innerHTML=rs+rs;
+}
+function renderTrust(){
+  const c=cfg(),vs=c.vehicles||[],items=[];
+  if(c.yearsInBusiness)items.push([esc(c.yearsInBusiness),"years on the road"]);
+  if(c.tripsCompleted)items.push([esc(c.tripsCompleted),"trips completed"]);
+  if(vs.length)items.push([vs.length,`vehicle types, ${Math.min(...vs.map(v=>v.seats))}–${Math.max(...vs.map(v=>v.seats))} seats`]);
+  if(vs.length)items.push([inr(Math.min(...vs.map(v=>v.ratePerKm))),"per km, from"+(isSample()?" (sample)":"")]);
+  items.push(["24×7","AI agent in English &amp; தமிழ்"]);
+  items.push(["Live","trip photos &amp; actual-km bills"]);
+  $("#trust").innerHTML=items.slice(0,5).map(([b,t])=>`<div class="panel"><b>${b}</b><span>${t}</span></div>`).join("");
+}
+function renderCTA(){const c=cfg();$("#ctaLine").textContent=c.phone?`Talk to Saarathi now, or call us at ${c.phone}.`:"Talk to Saarathi now, or reach the owner under Contact."}
+function renderRoutes(){
+  const rs=cfg().routes||[];if(S.route>=rs.length)S.route=0;
+  $("#routePick").innerHTML=rs.map((r,i)=>`<button type="button" data-r="${i}" aria-pressed="${i===S.route}">${esc(r.from)} → ${esc(r.to)}</button>`).join("")||'<span class="muted">No routes listed yet.</span>';
+  const r=rs[S.route];if(!r){$("#routeLine").innerHTML="";$("#destCards").innerHTML="";return}
+  const stops=String(r.stops||"").split(";").map(s=>s.trim()).filter(Boolean);
+  $("#routeLine").innerHTML=`<li><b>${esc(r.from)}</b><div class="km">Start · pickup</div></li>`+(r.via?`<li><b>Via ${esc(r.via)}</b><div class="km">Highway</div></li>`:"")+`<li class="end"><b>${esc(r.to)}</b><div class="km">${r.km} km one way${isSample()?" · approx, sample":""}</div></li><li class="end" style="padding-bottom:0"><div class="bk-actions"><button class="btn sm primary" type="button" data-bookroute="${S.route}">Book this route →</button><button class="btn sm" type="button" data-askroute="${S.route}">Ask Saarathi</button></div></li>`;
+  $("#destCards").innerHTML=stops.map((s,i)=>{const g=galleryFor(s),x=g?null:exPhotoFor(s);return`<div class="dest">${g?`<img class="bgart" src="${img(g.id)}" alt="${esc(s)}" loading="lazy">`:x?exImg(x,"(max-width:640px) 100vw, 400px",{alt:s}).replace("<img ",'<img class="bgart" ')+`<span class="cr">${exCredit(x,false)}</span>`:destArt(i+S.route*2,kindFor(s))}<p class="eyebrow" style="color:#FFF6E6;opacity:.85">Stop ${i+1} of ${stops.length}${g?" · photo by our team":""}</p><h3>${esc(s)}</h3></div>`}).join("")||'<div class="empty">No stops listed for this route.</div>';
+}
+function renderGallery(){
+  const items=Object.entries(S.gallery.items||{}).sort((a,b)=>b[1].at-a[1].at).slice(0,12);
+  const el=$("#galleryGrid");if(!el)return;
+  el.innerHTML=items.length?items.map(([k,g],i)=>`<figure class="gphoto${i===0?" big":""}"><img src="${img(g.id)}" alt="${esc(g.caption||g.place||"Trip photo")}" loading="lazy"><figcaption><b>${esc(g.place||"On the road")}</b>${g.caption?`<span>${esc(g.caption)}</span>`:""}<time>${fmtTime(g.at)}</time></figcaption>${Date.now()-g.at<864e5?'<span class="live-tag">New</span>':""}</figure>`).join("")
+    :`<div class="empty" style="grid-column:1/-1">No photos yet. The owner and managers add real photos of vehicles and destinations from the Owner console, and they appear here instantly.</div>`;
+}
+function renderPay(){
+  const c=cfg(),miss='<span class="muted">Not provided yet</span>';
+  $("#payInfo").innerHTML=`<div><div class="eyebrow">Accepted methods</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${(c.paymentMethods||[]).map(m=>`<span class="chip info">${esc(m)}</span>`).join("")||miss}</div></div>
+    <div class="contact-row" style="padding:6px 0"><div><div class="eyebrow">UPI ID</div>${c.upiId?`<span class="v">${esc(c.upiId)}</span>`:miss}</div>${c.upiId?'<button class="btn sm" data-copy="upi">Copy</button>':""}</div>
+    <div><div class="eyebrow">Bank transfer</div><div style="white-space:pre-line">${c.bankDetails?esc(c.bankDetails):miss}</div></div>
+    <div class="fare-lines"><div><span>Advance to hold the vehicle</span><span class="num">${c.advancePercent||0}%</span></div><div><span>GST</span><span class="num">${c.gstPercent?c.gstPercent+"%":"Not added"}</span></div><div><span>Night halt</span><span class="num">${c.nightCharge?inr(c.nightCharge)+"/night":"None"}</span></div><div><span>Online cancellation closes</span><span class="num">${Number(c.cancelCutoffHours)||0} h before pickup</span></div></div>
+    <p class="note">${esc(c.paymentTerms||"Payment terms not provided yet.")}</p>${isSample()?'<p class="note bad">These payment details are sample placeholders. Do not pay until the owner publishes real details.</p>':""}`;
+  const faqs=[["How is my fare worked out?",`Chargeable km is the higher of the km travelled and the vehicle's daily minimum × days. Fare = chargeable km × rate + driver bata per day${c.nightCharge?" + night halt":""}${c.gstPercent?" + GST":""}. Your rate is locked when the owner confirms. ${c.kmPolicy||""}`],
+    ["How is the final bill calculated?","Your driver photographs the odometer at the start and end. Actual km = end − start, priced with your locked rate, plus toll and parking receipts (also photographed), minus your advance."],
+    ["What isn't included?",c.extrasPolicy||"Not provided yet."],
+    ["When is my booking confirmed?",window.claude?.payments?"Instantly when you pay the advance online and the vehicle is free. If you pay by UPI/bank transfer instead, after the owner verifies your reference.":"After the owner checks the vehicle is free and verifies your advance. You then see your driver's name, phone and vehicle number."],
+    ...(window.claude?.payments?[["Is online payment safe?","Payments go through Razorpay's secure window; card and UPI details never reach our server. We confirm every payment with Razorpay before confirming your booking."]]:[]),
+    ["What is the cancellation policy?",c.cancellationPolicy||"The owner hasn't published a cancellation policy yet. Ask before paying."],
+    ["Why do I need to sign in?","Your bookings, payments and trip photos are tied to your account, so only you and the business can see them."],
+    ["Can the AI agent confirm or charge me?","No. Saarathi prepares the booking and you confirm it. Payment goes directly to the owner, who confirms the trip."]];
+  $("#faq").innerHTML=faqs.map(([q,a])=>`<details class="faq"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("");
+}
+const contactRows=()=>{const c=cfg();return[["Phone",c.phone],["WhatsApp",c.whatsapp],["Email",c.email],["Office",c.address],["Hours",c.hours]]};
+function renderContact(){
+  $("#contactInfo").innerHTML=contactRows().map(([k,v],i)=>`<div class="contact-row"><div style="min-width:0"><div class="eyebrow">${k}</div>${v?`<span class="v">${esc(v)}</span>`:'<span class="muted">Not provided yet</span>'}</div>${v?`<button class="btn sm" data-copyrow="${i}">Copy</button>`:""}</div>`).join("")+(cfg().whatsapp?`<div class="contact-row"><span class="small muted">Open a WhatsApp chat (may not open inside some viewers)</span><a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/${esc(String(cfg().whatsapp).replace(/\D/g,""))}">WhatsApp</a></div>`:"");
+}
+
+/* ================= account ================= */
+function renderAccount(){renderAccount0();const sp=$("#security");if(sp)sp.hidden=!(window.claude?.auth&&S.role!=="guest");renderMustChange();if(sp&&!sp.hidden&&!SECU.data&&!SECU.loading){SECU.loading=true;loadSecurity().finally(()=>SECU.loading=false)}}
+function renderAccount0(){
+  const chip=$("#acctChip"),name=S.req.profile?.name||S.me?.name||"";
+  const initial=(name||"?").trim().charAt(0).toUpperCase();
+  chip.innerHTML=S.role==="guest"?`<span class="ac-dot">?</span><span class="ac-txt">Sign in</span>`:`${S.me?.avatarUrl?`<img class="ac-dot" src="${esc(S.me.avatarUrl)}" alt="">`:`<span class="ac-dot">${esc(initial)}</span>`}<span class="ac-txt">${esc(name.split(" ")[0]||"Account")}<small>${esc(ROLE_LABEL[S.role])}</small></span>`;
+  const A=$("#accountBody");if(!A)return;
+  if(S.role==="guest"){
+    if(window.claude?.auth){A.innerHTML=`<div class="grid g2">
+      <form class="panel" id="loginForm" style="padding:20px;display:grid;gap:12px"><h3>Sign in</h3><p class="small muted">Use the email or mobile number you registered with.</p>
+        <label class="f"><span>Email or mobile</span><input id="lgId" autocomplete="username" required></label>
+        <label class="f"><span>Password</span><input id="lgPw" type="password" autocomplete="current-password" required></label>
+        <div class="form-actions"><span class="small muted">Forgot it? Call the owner to reset.</span><button class="btn primary" type="submit">Sign in</button></div></form>
+      <form class="panel" id="signupForm" style="padding:20px;display:grid;gap:12px"><h3>Create an account</h3><p class="small muted">Needed to book, pay and track trips. Your trips are private to you and the business.</p>
+        <div class="form-grid"><label class="f"><span>Full name</span><input id="suName" autocomplete="name" required></label><label class="f"><span>Mobile</span><input id="suPhone" inputmode="tel" autocomplete="tel" required></label></div>
+        <label class="f"><span>Email</span><input id="suEmail" type="email" autocomplete="email" required></label>
+        <label class="f"><span>Password (8+ characters)</span><input id="suPw" type="password" autocomplete="new-password" minlength="8" required></label>
+        <div class="form-actions"><span></span><button class="btn primary" type="submit">Create account</button></div></form></div>`;return}
+    A.innerHTML=`<div class="panel" style="padding:20px;display:grid;gap:10px"><h3>You're not signed in</h3><p class="muted">Browse the fleet, routes and fares freely. To book, chat with the agent, pay or track a trip, open this page signed in to Claude. Your trips stay linked to your account and are private to you and the business.</p></div>`;return}
+  const p=S.req.profile||{},st=myBookings();
+  const roleNote={owner:"Full access to every booking, the team, rates and settings.",manager:"You can manage bookings, fleet, rates, routes, the gallery and trip sheets. Only the owner manages the team.",driver:"You see trips assigned to you, upload pickup and odometer photos, and add toll or parking receipts.",pending:"You have staff access to this page, but the owner hasn't given you a role yet. Ask them to add you under Team & roles.",customer:"You can book, pay, track trips live and message the owner.",readonly:"Your access is view-only, so you can browse but not book. Ask the owner for booking access."}[S.role];
+  A.innerHTML=`<div class="grid g2">
+    <div class="panel" style="padding:20px;display:grid;gap:12px">
+      <div style="display:flex;gap:12px;align-items:center">${S.me?.avatarUrl?`<img class="ac-big" src="${esc(S.me.avatarUrl)}" alt="">`:`<span class="ac-big">${esc(((p.name||S.me?.name||"?")[0]||"?").toUpperCase())}</span>`}<div style="min-width:0"><h3>${esc(p.name||S.me?.name||"Your account")}</h3><span class="chip ${isStaff()?"info":"ok"}">${esc(ROLE_LABEL[S.role])}</span> <span class="small muted">${window.claude?.auth?"Signed in":"Signed in with Claude"}</span></div></div>
+      <p class="small muted">${esc(roleNote)}</p>
+      ${window.claude?.auth?`<div class="bk-actions"><a class="btn sm" href="#security">Security &amp; password</a><button class="btn sm danger" type="button" data-logout="1">Sign out</button></div>`:""}
+      ${!isStaff()&&S.role!=="readonly"?`<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div class="panel kpi"><b>${st.length}</b><span>Trips</span></div><div class="panel kpi"><b>${st.filter(b=>b.status==="completed").length}</b><span>Completed</span></div><div class="panel kpi"><b>${st.filter(b=>OPEN.includes(b.status)).length}</b><span>Unpaid</span></div></div>`:""}
+    </div>
+    ${S.role==="readonly"?"":`<form class="panel" id="profileForm" style="padding:20px;display:grid;gap:12px"><h3>${isStaff()?"Contact details":"Traveller profile"}</h3><p class="small muted">${isStaff()?"Customers see your name and phone on trips assigned to you.":"Used to fill your bookings. The owner may call to verify your number; verified customers can be confirmed without an advance."}</p>
+      <div class="form-grid"><label class="f"><span>Full name</span><input id="pfName" value="${esc(p.name||S.me?.name||"")}" autocomplete="name" required></label><label class="f"><span>Mobile</span><input id="pfPhone" value="${esc(p.phone||"")}" inputmode="tel" autocomplete="tel" required></label></div>
+      <div class="form-grid"><label class="f"><span>Alternate number</span><input id="pfAlt" value="${esc(p.altPhone||"")}" inputmode="tel"></label><label class="f"><span>Home city</span><input id="pfCity" value="${esc(p.city||"")}"></label><label class="f"><span>Agent language</span><select id="pfLang"><option value="en-IN" ${p.lang!=="ta-IN"?"selected":""}>English</option><option value="ta-IN" ${p.lang==="ta-IN"?"selected":""}>தமிழ்</option></select></label></div>
+      <div class="form-actions"><span class="small muted">${p.updatedAt?"Saved "+fmtTime(p.updatedAt):"Not saved yet"}</span><button class="btn primary" type="submit">Save profile</button></div></form>`}
+  </div>`;
+}
+
+/* ================= wizard ================= */
+/* ---------- entry points into checkout, with business rules ---------- */
+function tripReady(){const t=S.wiz.trip;return!!(t.from&&t.to&&t.km>0&&t.date>=todayISO())}
+function bookVehicle(id){
+  const W=S.wiz,v=veh(id);if(!v)return toast("That vehicle isn't available any more.",true);
+  W.veh=v.id;W.last=null;
+  if(!tripReady()){
+    if(W.trip.pax>v.seats)W.trip.pax=v.seats;
+    goStep(1);toast(`${v.name} selected. Enter your trip, then tap "See fare".`);return}
+  if(!suitability(v,W.trip.pax).fit){goStep(1);toast(`${v.name} seats ${v.seats}, but your trip has ${W.trip.pax} people. Change the number of people, or pick a bigger vehicle.`,true);return}
+  const a=availability(v.id,W.trip.date,W.trip.days);
+  goStep(2);
+  if(!a.ok){const alt=recommend(W.trip.pax,W.trip.days).find(x=>availability(x.v.id,W.trip.date,W.trip.days).ok);toast(`${v.name} is booked on your dates.${alt?` ${alt.v.name} is free.`:" Try different dates."}`,true)}
+  else toast(`${v.name} selected. Check the fare, then tap "Continue with ${v.name.split(" (")[0]}".`);
+}
+function bookRoute(from,to){
+  const W=S.wiz,t=W.trip,r=findRoute(from,to);
+  Object.assign(t,{from,to,km:r?r.km:"",kmSrc:r?"route_table":""});
+  if(!t.date||t.date<todayISO())t.date=addDays(todayISO(),3);
+  W.last=null;if(W.veh&&!suitability(veh(W.veh)||{seats:0},t.pax).fit)W.veh=null;
+  goStep(1);toast(`${from} → ${to} filled in${r?` (${r.km} km)`:""}. Choose your date, days and people, then tap "See vehicles".`);
+}
+/* ---------- checkout pages: each step is its own page (#book-trip … #booking-confirmed) ---------- */
+const ROUTES={1:"book-trip",2:"book-vehicle",3:"book-details",4:"book-review",5:"book-pay"};
+const ROUTE_STEP={"book":1,"book-trip":1,"book-vehicle":2,"book-details":3,"book-review":4,"book-pay":5,"booking-confirmed":5};
+const CK={on:false,ready:false,timer:null,left:10,stay:false};
+const routeHash=()=>{try{return decodeURIComponent(location.hash.slice(1))}catch{return""}};
+function allowedStep(n){const W=S.wiz,t=W.trip,tripOk=t.from&&t.to&&t.km>0&&t.date>=todayISO();
+  if(n>=5&&W.last)return 5;
+  if(n>=2&&!tripOk)return 1;
+  if(n>=3&&!veh(W.veh))return 2;
+  if(n>=4&&(S.role==="guest"||!String(W.cust.name||"").trim()||!PHONE.test(String(W.cust.phone||"").trim())))return 3;
+  return Math.min(n,4);}
+const SITE_PARTS=[...document.body.children].filter(el=>!/^(SCRIPT|STYLE|TITLE|LINK|META|NOSCRIPT|TEMPLATE)$/.test(el.tagName));
+function setCheckout(on){
+  if(CK.on===on)return;CK.on=on;document.body.classList.toggle("checkout",on);
+  /* Only the site's own page sections are hidden. Anything added later (the Razorpay payment window, browser extensions) is never touched. */
+  SITE_PARTS.forEach(el=>{if(["top","book","travelck","toasts","drawer","sampleBanner"].includes(el.id)||el.tagName==="FOOTER")return;el.toggleAttribute("data-ckhide",on)});
+  $("#book")?.classList.remove("pre");
+  if(!on){clearInterval(CK.timer);CK.timer=null;CK.stay=false;CK.left=10}
+}
+/* Navigate to a checkout page; pushes browser history so Back/Forward work. */
+function goStep(n,opt={}){
+  const W=S.wiz;W.step=allowedStep(n);
+  const h=ROUTES[W.step];
+  setCheckout(true);renderWizard();window.scrollTo(0,0);
+  if(routeHash()!==h&&!(W.step===5&&routeHash()==="booking-confirmed")){if(opt.replace)history.replaceState(null,"","#"+h);else{CK.skip=h;location.hash=h}}
+}
+function onRoute(){
+  const h=routeHash();
+  if(CK.skip&&CK.skip===h){CK.skip=null;return}
+  if(h in TROUTE){enterTrip(h);return}
+  exitTrip();
+  if(h in ROUTE_STEP){
+    setCheckout(true);
+    if(!CK.ready){$("#stepBody").innerHTML='<p class="muted">Loading…</p>';return}
+    const want=ROUTE_STEP[h],ok=allowedStep(want);S.wiz.step=ok;
+    if(ok!==want||h==="book")history.replaceState(null,"","#"+ROUTES[ok]);
+    if(ok<want&&h!=="book"){const names={1:"Trip",2:"Vehicle",3:"Your details",4:"Review"};toast(ok===3&&S.role==="guest"?"Sign in first to continue (step 3).":`Finish step ${ok} (${names[ok]}) first.`)}
+    renderWizard();window.scrollTo(0,0);
+  }else if(CK.on){setCheckout(false);renderWizard();const el=h&&document.getElementById(h);setTimeout(()=>el?el.scrollIntoView():window.scrollTo(0,0),30)}
+}
+function startRedirect(){
+  if(CK.timer||CK.stay)return;
+  CK.timer=setInterval(()=>{CK.left--;const c=$("#ckCount");if(c)c.textContent=CK.left;if(CK.left<=0){clearInterval(CK.timer);CK.timer=null;location.hash="trips"}},1000);
+}
+function routeReady(){CK.ready=true;onRoute();landOnSection()}
+/* Opening a link to a section (/#trips, /my-trips, a shared link, a refresh) must land on that section even though
+   the page builds its content after the browser's own jump. Re-aim a few times while content settles, and stop
+   as soon as the person scrolls by themselves. */
+let landUser=false;["wheel","touchstart","keydown"].forEach(ev=>addEventListener(ev,()=>{landUser=true},{passive:true}));
+function landOnSection(){
+  const h=routeHash();if(!h||h in TROUTE||h in ROUTE_STEP)return;
+  const aim=()=>{if(landUser)return;const el=document.getElementById(h);if(!el||el.hidden||el.closest("[hidden]"))return;const top=el.getBoundingClientRect().top;if(Math.abs(top)>4)el.scrollIntoView({block:"start"})};
+  [0,250,700,1500,3000].forEach(ms=>setTimeout(aim,ms));
+}
+addEventListener("hashchange",()=>{onRoute();landUser=false;landOnSection()});
+function flashWizard(quiet){if(CK.on){window.scrollTo(0,0);return}const el=$("#book .wizard");if(!el)return;if(!quiet||el.getBoundingClientRect().top<0||el.getBoundingClientRect().top>innerHeight*.6)el.scrollIntoView({behavior:"smooth",block:"start"});if(quiet)return;el.classList.remove("flash");void el.offsetWidth;el.classList.add("flash")}
+function saveWiz(){const w=S.wiz;LS.set("st.wiz",{step:w.step,trip:w.trip,veh:w.veh,cust:w.cust,last:w.last||null})}
+function stepHead(n,title,sub){return`<div class="wz-head"><span class="wz-n">${n}/5</span><div><h3>${title}</h3>${sub?`<p class="small muted">${sub}</p>`:""}</div></div>`}
+function renderWizard(){
+  const w=S.wiz,t=w.trip,B=$("#stepBody");if(!B)return;
+  const view=CK.on?w.step:1;
+  $$("#steps li").forEach(li=>{const n=+li.dataset.s,a=li.querySelector("a"),reach=allowedStep(n)>=n||(n===5&&!!w.last);li.classList.toggle("on",n===view);li.classList.toggle("done",n<view);li.classList.toggle("locked",!reach);
+    if(a){a.toggleAttribute("aria-current",n===view);a.setAttribute("aria-current",n===view?"step":"false");a.title=reach?"":"Finish the earlier steps first"}});
+  saveWiz();
+  const resume=!CK.on&&w.step>1?`<div class="resume"><span>You have a booking in progress: <b>step ${w.step} of 5</b>.</span><a class="btn sm primary" href="#${ROUTES[w.step]}">Resume →</a></div>`:"";
+  if(view===1){const r=findRoute(t.from,t.to);const chosen=veh(w.veh);
+    B.innerHTML=`${resume}${stepHead(1,"Where and when",chosen?`Vehicle chosen: <b>${esc(chosen.name)}</b>. Enter your trip to see the fare.`:"Tell us the route and dates. We'll show the vehicles that fit.")}<div class="form-grid">
+      <label class="f"><span class="lbl-row">Pickup city${geoAvail()?`<button type="button" class="locbtn" data-here="force" title="Use my current location">${PIN}<span>My location</span></button>`:""}</span><input id="wFrom" list="cityList" value="${esc(t.from)}" placeholder="Chennai" autocomplete="off"></label>
+      <label class="f"><span>Destination</span><input id="wTo" list="cityList" value="${esc(t.to)}" placeholder="Madurai" autocomplete="off"></label>
+      <label class="f"><span>Start date</span><input id="wDate" type="date" min="${todayISO()}" value="${esc(t.date)}"></label>
+      <label class="f"><span>Days</span><input id="wDays" type="number" min="1" max="30" value="${t.days}"></label>
+      <label class="f"><span>Passengers</span><input id="wPax" type="number" min="1" max="80" value="${t.pax}"></label>
+      <label class="f"><span>One-way km</span><input id="wKm" type="number" min="1" value="${r?r.km:esc(t.km)}" ${r?"readonly":""} placeholder="Road km"></label></div>
+      <datalist id="cityList">${[...new Set((cfg().routes||[]).flatMap(r=>[r.from,r.to]))].map(c=>`<option value="${esc(c)}">`).join("")}</datalist>
+      <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:12px;align-items:center"><div class="seg" role="group" aria-label="Trip type"><button type="button" data-tt="round" aria-pressed="${t.type==="round"}">Round trip</button><button type="button" data-tt="oneway" aria-pressed="${t.type==="oneway"}">One way drop</button></div>${geoAvail()&&!r?`<button class="btn sm" type="button" data-mapkm="1">${PIN} Road distance from map</button>`:""}<span class="small muted" id="kmNote">${r?`Distance from our route table${isSample()?" (sample)":""}.`:"Route not in our table — enter approximate road km. Final bill uses actual odometer km."}</span></div>
+      <div id="wMap" class="map" hidden></div>
+      <div class="form-actions"><span></span><button class="btn primary" id="w1Next" type="button">${chosen?"See fare":"See vehicles"} →</button></div>`;
+  }else if(view===2){
+    const rec=recommend(t.pax,t.days)[0],sel=veh(w.veh);
+    const sf=sel?computeFare(sel,t.km,t.days,t.type):null,sa=sel?availability(sel.id,t.date,t.days):null;
+    B.innerHTML=`${stepHead(2,"Pick a vehicle",`${esc(t.from)} → ${esc(t.to)} · ${fmtDate(t.date)} · ${t.days} day${t.days>1?"s":""} · ${t.pax} pax · ${t.type==="round"?"round trip":"one way"}${rec?` · Best fit: <b>${esc(rec.v.name)}</b>`:""}`)}
+      ${sel?`<div class="selbar"><div><span class="eyebrow">Selected</span><b>${esc(sel.name)}</b><span class="small">est. ${inr(sf.total)} · advance ${inr(sf.advance)} · ${sa.ok?`${sa.free} free on your dates`:"not free on your dates"}</span></div><button class="btn primary" id="w2Next" type="button" ${sa.ok?"":"disabled"}>Continue with ${esc(sel.name.split(" (")[0])} →</button></div>`:`<p class="note">Tap a vehicle to select it.</p>`}
+      <div class="grid g2">${cfg().vehicles.map(v=>vehicleCard(v,{pick:true,selected:w.veh===v.id,pax:t.pax,days:t.days,fare:computeFare(v,t.km,t.days,t.type),avail:availability(v.id,t.date,t.days)})).join("")}</div>
+      <div class="form-actions"><button class="btn ghost" id="wBack" type="button">← Back</button>${sel?`<button class="btn primary" data-w2go="1" type="button" ${sa.ok?"":"disabled"}>Continue →</button>`:""}</div>`;
+  }else if(view===3){const c=w.cust;
+    if(S.role==="guest"){
+      B.innerHTML=`${stepHead(3,"Sign in to continue","Bookings, payments and trip photos are linked to your account.")}
+        <div class="authgate"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        <div><b>Your trip is saved.</b><p class="small muted">${window.claude?.auth?"Sign in or create a free account below. You'll continue on this page.":"Open this page signed in to Claude to continue."}</p></div>
+        </div>
+        ${window.claude?.auth?`<div class="grid g2" style="margin-top:14px">
+          <form class="panel" id="ckLogin" style="padding:16px;display:grid;gap:10px"><b>I have an account</b><label class="f"><span>Email or mobile</span><input id="ckId" autocomplete="username" required></label><label class="f"><span>Password</span><input id="ckPw" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Sign in &amp; continue</button></form>
+          <form class="panel" id="ckSignup" style="padding:16px;display:grid;gap:10px"><b>I'm new here</b><div class="form-grid"><label class="f"><span>Full name</span><input id="ckName" autocomplete="name" required></label><label class="f"><span>Mobile</span><input id="ckPhone" inputmode="tel" autocomplete="tel" required></label></div><label class="f"><span>Email</span><input id="ckEmail" type="email" autocomplete="email" required></label><label class="f"><span>Password (8+ characters)</span><input id="ckPw2" type="password" autocomplete="new-password" minlength="8" required></label><button class="btn primary" type="submit">Create account &amp; continue</button></form></div>`:""}
+        <div class="form-actions"><button class="btn ghost" id="wBack" type="button">← Back</button><span></span></div>`;
+    }else{
+      B.innerHTML=`${stepHead(3,"Your details",profileOK()?"Filled from your profile. Change anything for this trip.":"Saved to your profile for next time.")}<div class="form-grid">
+        <label class="f"><span>Full name</span><input id="cName" value="${esc(c.name)}" autocomplete="name"></label>
+        <label class="f"><span>Mobile</span><input id="cPhone" value="${esc(c.phone)}" inputmode="tel" autocomplete="tel" placeholder="10-digit mobile"></label>
+        <label class="f"><span>Pickup time</span><input id="cTime" type="time" value="${esc(c.time)}"></label></div>
+        <div class="form-grid" style="margin-top:14px"><label class="f"><span>Pickup address</span><input id="cPickup" value="${esc(c.pickup)}" autocomplete="street-address"></label><label class="f"><span>Notes for the driver</span><input id="cNotes" value="${esc(c.notes)}" placeholder="Child seat, extra stops…"></label></div>
+        <div class="form-actions"><button class="btn ghost" id="wBack" type="button">← Back</button><button class="btn primary" id="w3Next" type="button">Review booking →</button></div>`;
+    }
+  }else if(view===4){
+    const v=veh(w.veh);if(!v){w.step=2;return renderWizard()}
+    const f=computeFare(v,t.km,t.days,t.type),a=availability(v.id,t.date,t.days),g=canBook(),online=!!window.claude?.payments;
+    B.innerHTML=`${stepHead(4,"Review and send","Check everything. Next you pay the advance to hold the vehicle.")}${draftHTML({...t,...w.cust,vehicleId:v.id},f,a)}
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:.9rem"><input type="checkbox" id="wAgree" style="width:auto;margin-top:4px" ${w.agree?"checked":""}> I've read the payment terms and cancellation policy. My booking is confirmed ${online?"as soon as I pay the advance online (or after the owner verifies a UPI/bank payment)":"after the owner verifies my advance"}.</label>
+      ${g.ok&&a.ok?"":`<div class="blocked" role="alert"><b>You can't send this request yet</b><p>${esc(!g.ok?g.why:a.reason)}</p>${blockFix(g,a)}</div>`}
+      <div class="form-actions"><button class="btn ghost" id="wBack" type="button">← Back</button>${g.ok&&a.ok?`<button class="btn primary" id="wSend" type="button">Send request &amp; pay advance →</button>`:`<button class="btn primary" type="button" disabled title="${esc(!g.ok?g.why:a.reason)}">Send request &amp; pay advance →</button>`}</div>`;
+  }else{
+    const b=myBookings().find(x=>x.id===w.last);
+    if(!b){B.innerHTML=`${stepHead(5,"Pay the advance","")}<p class="muted">Loading your booking…</p>`;return}
+    const fare=b.lockedFare||b.fare,c=cfg(),st=STATUS[b.status]||{l:b.status,c:"mut"};
+    const summary=`<div class="paysum"><div><span class="mono small muted">${esc(b.ref)}</span><b>${esc(b.from)} → ${esc(b.to)}</b><span class="small muted">${fmtDate(b.date)} · ${b.days} day${b.days>1?"s":""} · ${esc(b.vehicleName)} · ${b.pax} pax</span></div><div class="paysum-amt"><span class="small muted">Advance</span><b class="num">${inr(fare?.advance)}</b><span class="small muted">of est. ${inr(fare?.total)}</span></div></div>`;
+    const again=`<button class="btn ghost" type="button" data-newtrip="1">Book another trip</button>`;
+    if(["awaiting_payment","changes_requested"].includes(b.status)&&!b.paidOnline){
+      B.innerHTML=`${stepHead(5,"Pay the advance to hold your vehicle","Your request is saved. The vehicle is held for you once the advance is paid.")}${summary}
+        ${b.ownerNote?`<p class="note">Owner: ${esc(b.ownerNote)}</p>`:""}
+        <div class="trip" style="padding:0;gap:12px">
+        ${window.claude?.payments?`<div class="paybox"><div><b>Pay online — confirms instantly</b><div class="small muted">UPI, cards, net banking or wallets via Razorpay.</div></div><button type="button" class="btn primary" data-payonline="${esc(b.id)}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/></svg>Pay ${inr(fare?.advance)} securely</button></div>
+        <details class="faq"><summary>Or pay by UPI / bank transfer yourself</summary>`:`<div class="note">Pay ${inr(fare?.advance)} ${c.upiId?`to UPI <b class="mono">${esc(c.upiId)}</b>`:"using the details under Payments"}, then send the reference below. The owner confirms after checking it.</div>`}
+          ${window.claude?.payments&&c.upiId?`<p class="small">Pay ${inr(fare?.advance)} to UPI <b class="mono">${esc(c.upiId)}</b>, then send the reference. The owner confirms after checking it.</p>`:""}
+          <div class="form-grid"><label class="f"><span>Paid via</span><select data-method>${(c.paymentMethods||["UPI"]).filter(m=>!/cash/i.test(m)).map(m=>`<option>${esc(m)}</option>`).join("")||"<option>UPI</option>"}</select></label><label class="f"><span>UTR / reference no.</span><input data-utr placeholder="12-digit UTR"></label><label class="f"><span>Screenshot (optional)</span><input type="file" accept="image/*" data-proof></label></div>
+          <div class="bk-actions" style="margin-top:8px"><button class="btn sm" type="button" data-paysend="${esc(b.id)}">I've paid — send reference</button></div>
+        ${window.claude?.payments?`</details>`:""}
+        </div>
+        <div class="form-actions"><a class="btn ghost" href="#trips">Pay later from My Trips</a>${again}</div>`;
+    }else if(b.status==="payment_submitted"){
+      B.innerHTML=`${stepHead(5,"Payment sent — verifying","The owner is checking your payment reference. This page updates by itself.")}${summary}
+        <div class="waitbox"><span class="typing"><span></span><span></span><span></span></span><span>Waiting for the owner to confirm. You'll get a notification here and in My Trips.</span></div>
+        <div class="form-actions"><a class="btn ghost" href="#trips">Go to My Trips</a>${again}</div>`;
+    }else if(["confirmed","on_trip","completed"].includes(b.status)){
+      B.innerHTML=`<div class="success"><svg viewBox="0 0 52 52" width="64" height="64" aria-hidden="true"><circle cx="26" cy="26" r="24" fill="none" stroke="currentColor" stroke-width="3"/><path d="M15 27l7 7 15-15" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <h3>Booking confirmed!</h3><p class="muted">${b.paidOnline?`Advance ${inr(b.paidOnline.amount)} paid online.`:b.advancePaid?"Advance verified by the owner.":"Confirmed by the owner."} Your price is locked at ${inr(fare?.total)} (final bill on actual km).</p></div>${summary}
+        ${b.assign?`<div class="drv"><span class="ac-dot">${esc((b.assign.driverName||"D")[0])}</span><div><b>${esc(b.assign.driverName)}</b> · your driver<div class="small"><span class="mono">${esc(b.assign.driverPhone||"")}</span> · <span class="mono">${esc(b.assign.vehicleNo)}</span></div></div></div>`:`<p class="note">Next: the owner assigns your driver and vehicle number. You'll see them here and in My Trips, and your driver's photos appear live on the day.</p>`}
+        ${CK.on&&!CK.stay?`<p class="redir" id="ckRedir">Taking you to <b>My Trips</b> in <b id="ckCount">${CK.left}</b>s · <button type="button" class="linkbtn" data-stayhere="1">Stay on this page</button></p>`:""}
+        <div class="form-actions"><a class="btn primary" href="#trips">Open My Trips</a>${again}</div>`;
+      if(CK.on){if(routeHash()!=="booking-confirmed")history.replaceState(null,"","#booking-confirmed");startRedirect()}
+    }else{
+      B.innerHTML=`${stepHead(5,st.l,"")}${summary}${b.ownerNote?`<p class="note">Owner: ${esc(b.ownerNote)}</p>`:""}<div class="form-actions"><a class="btn ghost" href="#contact">Contact the owner</a>${again}</div>`;
+    }
+  }
+}
+function draftHTML(d,f,a){const v=veh(d.vehicleId);
+  return`<dl class="kv"><dt>Route</dt><dd>${esc(d.from)} → ${esc(d.to)} (${d.type==="oneway"?"one way":"round trip"})</dd><dt>Dates</dt><dd>${fmtDate(d.date)} – ${fmtDate(addDays(d.date,(d.days||1)-1))} · ${d.days} day${d.days>1?"s":""}</dd><dt>Vehicle</dt><dd>${esc(v?.name||"?")} · ${d.pax} passenger${d.pax>1?"s":""}</dd>${d.name?`<dt>Name</dt><dd>${esc(d.name)} · ${esc(d.phone||"")}</dd>`:""}${d.pickup?`<dt>Pickup</dt><dd>${esc(d.pickup)}${d.time?" at "+esc(d.time):""}</dd>`:""}<dt>Availability</dt><dd>${a.ok?`<span class="chip ok">${a.free} of ${a.total} free</span>`:`<span class="chip bad">${esc(a.reason)}</span>`}</dd></dl>
+  ${fareLines(f,"Estimated total")}<p class="small muted">${esc(f.extras)} Final bill on actual odometer km.</p>`}
+function fareLines(f,label){return`<div class="fare-lines"><div><span>${f.chargeKm} km × ${inr(f.rate)}/km ${f.chargeKm>f.runKm?`<span class="muted">(min ${f.minKm} km applies)</span>`:""}</span><span class="num">${inr(f.base)}</span></div><div><span>Driver bata × ${f.days} day${f.days>1?"s":""}</span><span class="num">${inr(f.bata)}</span></div>${f.night?`<div><span>Night halt</span><span class="num">${inr(f.night)}</span></div>`:""}${f.gst?`<div><span>GST ${f.gstPercent}%</span><span class="num">${inr(f.gst)}</span></div>`:""}<div class="tot"><span>${label} ${f.sample?'<span class="chip sample">Sample rates</span>':""}</span><span class="num">${inr(f.total)}</span></div><div><span>Advance to hold</span><span class="num">${inr(f.advance)}</span></div></div>`}
+function readStep1(){const T=S.wiz.trip;if(!$("#wFrom"))return;T.from=$("#wFrom").value.trim();T.to=$("#wTo").value.trim();T.date=$("#wDate").value;T.days=Math.max(1,parseInt($("#wDays").value)||1);T.pax=Math.max(1,parseInt($("#wPax").value)||1);const r=findRoute(T.from,T.to);T.km=r?r.km:Number($("#wKm").value)||"";T.kmSrc=r?"route_table":"customer";saveWiz()}
+function readStep3(){const C=S.wiz.cust;if(!$("#cName"))return;C.name=$("#cName").value;C.phone=$("#cPhone").value;C.time=$("#cTime").value;C.pickup=$("#cPickup").value;C.notes=$("#cNotes").value;saveWiz()}
+
+/* ================= trips (customer) ================= */
+function photoStrip(trip){
+  const ph=Object.values(trip?.photos||{}).sort((a,b)=>a.at-b.at);
+  if(!ph.length)return"";
+  return`<div class="pstrip">${ph.map(p=>`<figure><a href="${img(p.id)}" target="_blank" rel="noopener"><img src="${img(p.id)}" alt="${esc(p.caption)}" loading="lazy"></a><figcaption>${esc(p.caption)}<time>${fmtTime(p.at)}</time></figcaption></figure>`).join("")}</div>`;
+}
+function finalHTML(b){const f=finalBill(b);if(!f)return"";
+  return`<div class="final"><div class="eyebrow">Final bill · actual odometer km</div><div class="fare-lines">
+    <div><span>Odometer ${b.trip.start.km} → ${b.trip.end.km}</span><span class="num">${f.actualKm} km</span></div>
+    <div><span>${f.chargeKm} km × ${inr(f.rate)}/km ${f.chargeKm>f.actualKm?`<span class="muted">(min ${f.minKm} km)</span>`:""}</span><span class="num">${inr(f.base)}</span></div>
+    <div><span>Driver bata × ${f.days}</span><span class="num">${inr(f.bata)}</span></div>${f.night?`<div><span>Night halt</span><span class="num">${inr(f.night)}</span></div>`:""}${f.gst?`<div><span>GST</span><span class="num">${inr(f.gst)}</span></div>`:""}
+    ${Object.values(b.trip.receipts||{}).map(r=>`<div><span>${esc(r.label)} (receipt)</span><span class="num">${inr(r.amount)}</span></div>`).join("")}
+    <div class="tot"><span>Trip total</span><span class="num">${inr(f.grand)}</span></div><div><span>Advance paid</span><span class="num">− ${inr(f.paid)}</span></div><div class="tot"><span>Balance to driver</span><span class="num">${inr(f.balance)}</span></div></div></div>`}
+function renderTrips(){renderTrips0();renderTravelTrips()}
+function renderTrips0(){
+  const L=$("#tripList"),c=cfg();
+  if(S.role==="guest"){L.innerHTML=`<div class="empty">Sign in to see your trips. Requests from the form and the agent appear here with live status and trip photos.</div>`;return}
+  if(isStaff()&&S.role!=="owner"){L.innerHTML=`<div class="empty">Staff accounts see trips in the Owner console.</div>`;return}
+  const bs=myBookings();
+  if(!bs.length){L.innerHTML=`<div class="empty">No trips yet. Ask Saarathi or use the booking form; your request shows here with live status.</div>`;return}
+  L.innerHTML=bs.map(b=>{const st=STATUS[b.status]||{l:b.status,c:"mut",step:0};const needPay=["awaiting_payment","changes_requested"].includes(b.status);const cr=cancelRule(b);const fare=b.lockedFare||b.fare;
+    return`<article class="panel trip"><div class="trip-top"><div><span class="mono small muted">${esc(b.ref)}</span><h3>${esc(b.from)} → ${esc(b.to)}</h3></div><span class="chip ${st.c}">${esc(st.l)}</span></div>
+      <div class="small muted">${fmtDate(b.date)} – ${fmtDate(b.endDate)} · ${esc(b.vehicleName)} · ${b.pax} pax · ${b.lockedFare?"locked":"est."} <b class="num">${inr(fare?.total)}</b> · advance <b class="num">${inr(fare?.advance)}</b></div>
+      ${st.step?`<div class="track t5">${[1,2,3,4,5].map(n=>`<span class="${n<=st.step?"on":""}"></span>`).join("")}</div><div class="track-labels t5"><span>Requested</span><span>Paid</span><span>Confirmed</span><span>On trip</span><span>Done</span></div>`:""}
+      ${b.ownerNote?`<p class="note">Owner: ${esc(b.ownerNote)}</p>`:""}
+      ${b.assign&&["confirmed","on_trip"].includes(b.status)?`<div class="drv"><span class="ac-dot">${esc((b.assign.driverName||"D")[0])}</span><div><b>${esc(b.assign.driverName)}</b> · your driver<div class="small"><span class="mono" style="user-select:all">${esc(b.assign.driverPhone||"")}</span> · <span class="mono">${esc(b.assign.vehicleNo)}</span></div></div></div>`:""}
+      ${geoAvail()&&trackable(b)?`<div class="bk-actions"><button class="btn sm primary" type="button" data-track="${esc(b.id)}" data-toward="to">${PIN} Track trip to ${esc(b.to)}</button>${b.type!=="oneway"?`<button class="btn sm" type="button" data-track="${esc(b.id)}" data-toward="back">Return to ${esc(b.from)}</button>`:""}</div>`:""}
+      ${photoStrip(b.trip)}${finalHTML(b)}
+      ${needPay&&window.claude?.payments&&!b.paidOnline?`<div class="paybox"><div><b>Pay the ${inr(fare?.advance)} advance online</b><div class="small muted">UPI, cards, net banking or wallets via Razorpay. Your booking confirms instantly if the vehicle is still free.</div></div><button type="button" class="btn primary" data-payonline="${esc(b.id)}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/></svg>Pay ${inr(fare?.advance)} securely</button></div><p class="small muted" style="text-align:center">or pay directly and send the reference</p>`:""}
+      ${b.paidOnline?`<p class="chip ok">Advance ${inr(b.paidOnline.amount)} paid online · <span class="mono">${esc(b.paidOnline.paymentId)}</span></p>`:""}
+      ${b.refund?`<p class="chip info">Refunded ${inr(b.refund.amount)}${b.refund.full?" (full)":""} · reaches your account in 5–7 working days</p>`:""}
+      ${needPay&&!b.paidOnline?`<div class="note">Pay ${inr(fare?.advance)} ${c.upiId?`to UPI <b class="mono">${esc(c.upiId)}</b>`:"using the details under Payments"}, then send the reference and a screenshot.</div>
+        <div class="form-grid"><label class="f"><span>Paid via</span><select data-method>${(c.paymentMethods||["UPI"]).filter(m=>!/cash/i.test(m)).map(m=>`<option>${esc(m)}</option>`).join("")||"<option>UPI</option>"}</select></label><label class="f"><span>UTR / reference no.</span><input data-utr placeholder="12-digit UTR"></label><label class="f"><span>Screenshot (optional)</span><input type="file" accept="image/*" data-proof></label></div>
+        <div class="bk-actions"><button class="btn primary sm" data-paysend="${esc(b.id)}">I've paid — send details</button><button class="btn sm" type="button" data-openpay="${esc(b.id)}">Open payment page →</button></div>`:""}
+      ${b.payment&&!needPay?`<p class="small muted">Payment sent: ${esc(b.payment.method)} · <span class="mono">${esc(b.payment.utr)}</span>${b.payment.proofId?" · screenshot attached":""}</p>`:""}
+      ${["awaiting_payment","payment_submitted","confirmed","changes_requested"].includes(b.status)?(cr.ok?`<div class="bk-actions"><button class="btn sm danger" data-cancel="${esc(b.id)}">Cancel booking</button></div><div data-confirmcancel hidden class="note bad">Cancel ${esc(b.ref)}? ${esc(c.cancellationPolicy||"Refund terms: ask the owner.")}<div class="bk-actions" style="margin-top:6px"><button class="btn sm danger" data-cancelyes="${esc(b.id)}">Yes, cancel</button><button class="btn sm" data-cancelno="1">Keep it</button></div></div>`:`<p class="small muted">${esc(cr.why)}</p>`):""}
+    </article>`}).join("");
+}
+
+/* ================= AI agent ================= */
+const QUICK=["Book Chennai → Madurai for 2 days","Which vehicle for 10 people?","Places to visit between Trichy and Madurai","Payment and cancellation terms","Owner's contact number","Status of my booking"];
+function initChat(){
+  $("#quick").innerHTML=QUICK.map(q=>`<button type="button">${esc(q)}</button>`).join("");
+  $("#quick").addEventListener("click",e=>{const b=e.target.closest("button");if(b)ask(b.textContent)});
+  drawChat();
+  $("#composer").addEventListener("submit",e=>{e.preventDefault();const v=$("#chatIn").value.trim();if(v){$("#chatIn").value="";ask(v)}});
+  $("#chatIn").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("#composer").requestSubmit()}});
+  $("#chatIn").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=Math.min(120,e.target.scrollHeight)+"px"});
+  $("#resetBtn").onclick=()=>{S.chat=[];S.drafts={};LS.set("st.chat",[]);LS.set("st.drafts",{});drawChat()};
+  $("#stopBtn").onclick=()=>S.ctl?.abort();
+  $("#speakBtn").setAttribute("aria-pressed",String(LS.get("st.speak",false)));
+  $("#speakBtn").onclick=e=>{const on=e.currentTarget.getAttribute("aria-pressed")!=="true";e.currentTarget.setAttribute("aria-pressed",String(on));LS.set("st.speak",on);if(!on)try{speechSynthesis.cancel()}catch{}};
+  $("#langSel").value=LS.get("st.lang","en-IN");$("#langSel").onchange=e=>LS.set("st.lang",e.target.value);
+  initVoice();
+}
+function fmtAI(t){const lines=esc(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").split(/\n/);let o="",inl=false;for(const l of lines){const m=l.match(/^\s*[-•*]\s+(.*)/);if(m){if(!inl){o+="<ul>";inl=true}o+=`<li>${m[1]}</li>`}else{if(inl){o+="</ul>";inl=false}o+=l?l+"<br>":"<br>"}}if(inl)o+="</ul>";return o.replace(/(<br>)+$/,"")}
+function drawChat(){
+  const M=$("#msgs");
+  if(!S.chat.length){M.innerHTML=`<div class="msg ai">Vanakkam${S.req.profile?.name?" "+esc(S.req.profile.name.split(" ")[0]):""}! I'm Saarathi, the booking agent for ${esc(cfg().name)}. Tell me where you'd like to go, when, and how many people. I'll check vehicles and the calendar, estimate the fare, and prepare a booking for you to confirm.${isSample()?"<span class='tool'>Note: rates and vehicles are sample data until the owner publishes real details.</span>":""}</div>`;return}
+  M.innerHTML=S.chat.map(m=>m.sys?`<div class="msg sys">${esc(m.content.replace(/^\[|\]$/g,""))}</div>`:m.role==="user"?`<div class="msg me">${esc(m.content)}</div>`:(m.draft&&S.drafts[m.draft]?draftCard(m.draft):"")+`<div class="msg ai">${fmtAI(m.content)}</div>`).join("");
+  M.scrollTop=M.scrollHeight;
+}
+function draftCard(id){const d=S.drafts[id],v=d&&veh(d.vehicleId);if(!v)return"";const f=computeFare(v,d.km,d.days,d.type),a=availability(d.vehicleId,d.date,d.days),g=canBook();const ready=g.ok&&a.ok&&d.name&&d.phone;
+  return`<div class="draft"><h4>Booking ready to confirm</h4>${draftHTML(d,f,a)}${d.sent?`<p class="chip ok">Sent as ${esc(d.sent)}</p>`:(g.ok?"":`<p class="note bad">${esc(g.why)}</p>`)}${d.sent?"":`<div class="bk-actions" style="margin-top:8px"><button class="btn primary sm" data-confirmdraft="${esc(id)}" ${ready?"":"disabled"}>Confirm &amp; send request</button><button class="btn sm" data-editdraft="${esc(id)}">Edit in form</button></div>${!d.name||!d.phone?'<p class="small muted">Name and mobile are needed before sending.</p>':""}`}</div>`}
+async function confirmDraft(id,btn){const d=S.drafts[id];if(!d)return;btn.disabled=true;const b=await submitBooking({...d,source:"agent"});if(b){d.sent=b.ref;LS.set("st.drafts",S.drafts);S.chat.push({role:"user",sys:true,content:`[Customer tapped Confirm. Request ${b.ref} sent, status: awaiting advance payment.]`});saveChat();drawChat();
+    const W=S.wiz;Object.assign(W.trip,{from:d.from,to:d.to,date:d.date,days:d.days,pax:d.pax,type:d.type,km:d.km});W.veh=d.vehicleId;Object.assign(W.cust,{name:d.name,phone:d.phone,pickup:d.pickup||W.cust.pickup,time:d.time||W.cust.time});W.last=b.id;
+    toast(`Request ${b.ref} sent. Opening the payment page…`);setTimeout(()=>goStep(5),700)}else btn.disabled=false}
+const saveChat=()=>{S.chat=S.chat.slice(-30);LS.set("st.chat",S.chat)};
+const TRAVEL_TOOLS=()=>tAvail()?[
+  {name:"search_flights",description:"Searches live airline fares and shows them in the Flights & hotels section for the customer to select. from/to can be city names or IATA codes. Dates YYYY-MM-DD. Returns the cheapest options with total price in INR. Never quote a fare that this tool didn't return.",
+    inputSchema:{type:"object",properties:{from:{type:"string"},to:{type:"string"},date:{type:"string"},return_date:{type:"string"},adults:{type:"integer"},children:{type:"integer"},infants:{type:"integer"},cabin:{type:"string",enum:["economy","premium_economy","business","first"]}},required:["from","to","date"]},
+    async execute(i){Object.assign(TR.f,{from:String(i.from),to:String(i.to),date:String(i.date),ret:String(i.return_date||""),trip:i.return_date?"round":"oneway",adults:Number(i.adults)||1,children:Number(i.children)||0,infants:Number(i.infants)||0,cabin:i.cabin||"economy"});TR.tab="flight";renderTravel();
+      const r=await tSearchFlights();if(!r)throw new Error(TR.err||"Search failed");$("#travel")?.scrollIntoView({behavior:"smooth"});
+      return{shown_to_customer:true,count:r.offers.length,cheapest:r.offers.slice(0,5).map(o=>({airline:o.airline,depart:o.slices[0].departAt,arrive:o.slices[0].arriveAt,stops:o.slices[0].stops,duration_min:o.slices[0].minutes,total_inr:o.price.total,refundable:o.refundable,baggage:o.baggage})),note:"Ask the customer to tap Select on the fare they want; they approve and pay on the next pages."}}},
+  {name:"search_hotels",description:"Searches live hotel rooms (prices in INR) and shows them in the Flights & hotels section for the customer to select. Never quote a room price this tool didn't return.",
+    inputSchema:{type:"object",properties:{city:{type:"string"},country_code:{type:"string"},checkin:{type:"string"},checkout:{type:"string"},rooms:{type:"integer"},adults:{type:"integer"}},required:["city","checkin","checkout"]},
+    async execute(i){Object.assign(TR.h,{city:String(i.city),country:String(i.country_code||"IN").toUpperCase(),checkin:String(i.checkin),checkout:String(i.checkout),rooms:Number(i.rooms)||1,adults:Number(i.adults)||2});TR.tab="hotel";renderTravel();
+      const r=await tSearchHotels();if(!r)throw new Error(TR.err||"Search failed");$("#travel")?.scrollIntoView({behavior:"smooth"});
+      return{shown_to_customer:true,count:r.hotels.length,nights:r.nights,cheapest:r.hotels.slice(0,5).map(h=>({hotel:h.name,stars:h.stars,rating:h.rating,from_inr:h.from,cheapest_room:h.rates[0]?.room,refundable:h.rates[0]?.refundable})),note:"Ask the customer to open the hotel and tap Select on a room."}}}
+]:[];
+const TOOLS=()=>[...TRAVEL_TOOLS(),...PHASE2_TOOLS(),...GEO_TOOLS(),exploreTool(),
+  {name:"get_business_info",description:"Business profile: contacts, hours, served areas, payment methods, UPI, advance %, GST, payment terms, extras policy, km policy, cancellation policy and online cancellation cutoff hours, and sample_data flag. Empty strings mean not provided.",
+    execute(){const c=cfg();return{sample_data:isSample(),name:c.name,phone:c.phone,whatsapp:c.whatsapp,email:c.email,address:c.address,hours:c.hours,served_areas:c.servedAreas,payment_methods:c.paymentMethods,upi_id:c.upiId,bank_details_available:!!c.bankDetails,advance_percent:c.advancePercent,gst_percent:c.gstPercent,payment_terms:c.paymentTerms,extras_policy:c.extrasPolicy,night_charge_per_night:c.nightCharge,km_policy:c.kmPolicy,cancellation_policy:c.cancellationPolicy,online_cancel_cutoff_hours:c.cancelCutoffHours}}},
+  {name:"get_customer_account",description:"Whether the customer is signed in, their role, saved profile name and phone, and whether they can book now (with the reason if not).",
+    execute(){const g=canBook();return{signed_in:S.role!=="guest",role:S.role,profile_name:S.req.profile?.name||"",profile_phone:S.req.profile?.phone||"",can_book:g.ok,reason:g.ok?undefined:g.why}}},
+  {name:"list_vehicles",description:"Fleet with id, name, seats, AC, units, per-km rate, minimum km per day, driver bata per day, luggage. Pass passengers and days for fit notes and a ranked recommendation.",inputSchema:{type:"object",properties:{passengers:{type:"integer"},days:{type:"integer"}}},
+    execute(i){const p=Number(i.passengers)||0,d=Number(i.days)||1;return{sample_data:isSample(),vehicles:cfg().vehicles.map(v=>({id:v.id,name:v.name,seats:v.seats,ac:v.ac,units:v.count,rate_per_km:v.ratePerKm,min_km_per_day:v.minKmPerDay,driver_bata_per_day:v.driverBata,luggage:v.luggage||"",has_real_photo:!!v.photoId,...(p?{fits:suitability(v,p,d).fit,fit_note:suitability(v,p,d).why}:{})})),recommended_order:p?recommend(p,d).map(x=>x.v.id):undefined}}},
+  {name:"lookup_route",description:"One-way road km between two places from the route table, with via-towns and stops. found:false if not listed.",inputSchema:{type:"object",properties:{from:{type:"string"},to:{type:"string"}},required:["from","to"]},
+    execute(i){const r=findRoute(i.from,i.to);return r?{found:true,one_way_km:r.km,via:r.via,stops:r.stops,sample_data:isSample()}:{found:false,known_routes:cfg().routes.map(r=>r.from+"–"+r.to)}}},
+  {name:"check_availability",description:"Whether a vehicle has a free unit for the dates (YYYY-MM-DD), from the booking calendar.",inputSchema:{type:"object",properties:{vehicle_id:{type:"string"},start_date:{type:"string"},days:{type:"integer"}},required:["vehicle_id","start_date","days"]},
+    execute(i){return availability(String(i.vehicle_id),String(i.start_date),Number(i.days)||1)}},
+  {name:"estimate_fare",description:"Fare from the rate card. Use for every price quoted. trip_type 'round' or 'oneway'.",inputSchema:{type:"object",properties:{vehicle_id:{type:"string"},one_way_km:{type:"number"},days:{type:"integer"},trip_type:{type:"string",enum:["round","oneway"]},km_source:{type:"string",enum:["route_table","map","approx"]}},required:["vehicle_id","one_way_km","days","trip_type"]},
+    execute(i){const v=veh(String(i.vehicle_id));if(!v)throw new Error("Unknown vehicle_id");return{...computeFare(v,i.one_way_km,i.days,i.trip_type==="oneway"?"oneway":"round"),km_source:i.km_source||"approx",note:"Estimate. Final bill on actual odometer km."}}},
+  {name:"prepare_booking",description:"Shows the customer a booking card with fare and availability and a Confirm button only they can press. Call once all details are known. You cannot confirm or take payment.",
+    inputSchema:{type:"object",properties:{from:{type:"string"},to:{type:"string"},start_date:{type:"string"},days:{type:"integer"},passengers:{type:"integer"},trip_type:{type:"string",enum:["round","oneway"]},one_way_km:{type:"number"},km_source:{type:"string"},vehicle_id:{type:"string"},customer_name:{type:"string"},customer_phone:{type:"string"},pickup_address:{type:"string"},pickup_time:{type:"string"},notes:{type:"string"}},required:["from","to","start_date","days","passengers","trip_type","one_way_km","vehicle_id"]},
+    execute(i){const v=veh(String(i.vehicle_id));if(!v)throw new Error("Unknown vehicle_id");
+      const d={from:String(i.from),to:String(i.to),date:String(i.start_date),days:Math.max(1,Number(i.days)||1),pax:Math.max(1,Number(i.passengers)||1),type:i.trip_type==="oneway"?"oneway":"round",km:Number(i.one_way_km),kmSrc:String(i.km_source||"approx"),vehicleId:v.id,name:String(i.customer_name||S.req.profile?.name||""),phone:String(i.customer_phone||S.req.profile?.phone||""),pickup:String(i.pickup_address||""),time:String(i.pickup_time||""),notes:String(i.notes||"")};
+      if(!suitability(v,d.pax).fit)throw new Error(`${v.name} seats only ${v.seats}`);
+      const id="d"+Date.now().toString(36);S.drafts[id]=d;LS.set("st.drafts",S.drafts);S.pendingDraft=id;const a=availability(v.id,d.date,d.days),g=canBook();
+      return{card_shown:true,availability:a,fare:computeFare(v,d.km,d.days,d.type),can_submit:g.ok,blocked_reason:g.ok?undefined:g.why,missing:[!d.name&&"customer_name",!d.phone&&"customer_phone"].filter(Boolean)}}},
+  {name:"get_my_bookings",description:"This customer's bookings: reference, route, dates, status, locked fare, assigned driver and vehicle number, trip photo count, final bill balance, owner notes.",
+    execute(){if(S.role==="guest")return{signed_in:false};return{bookings:myBookings().map(b=>{const f=finalBill(b);return{ref:b.ref,from:b.from,to:b.to,date:b.date,days:b.days,vehicle:b.vehicleName,status:STATUS[b.status]?.l||b.status,total:(b.lockedFare||b.fare)?.total,advance:(b.lockedFare||b.fare)?.advance,driver:b.assign?{name:b.assign.driverName,phone:b.assign.driverPhone,vehicle_no:b.assign.vehicleNo}:null,trip_photos:Object.keys(b.trip?.photos||{}).length,final_bill:f?{actual_km:f.actualKm,total:f.grand,balance:f.balance}:null,owner_note:b.ownerNote,can_cancel_online:cancelRule(b).ok}})}}},
+  {name:"escalate_to_owner",description:"Sends the customer's question to the owner's console. Returns delivery status and owner contacts.",inputSchema:{type:"object",properties:{summary:{type:"string"},customer_name:{type:"string"},customer_phone:{type:"string"}},required:["summary"]},
+    async execute(i){const r=await sendTicket({name:String(i.customer_name||S.req.profile?.name||""),phone:String(i.customer_phone||S.req.profile?.phone||""),message:String(i.summary),via:"agent"});return{delivered:r.ok,owner_phone:cfg().phone,owner_whatsapp:cfg().whatsapp,owner_email:cfg().email}}}
+];
+function rules(){return`You are Saarathi, the booking agent for ${cfg().name}, a vehicle-rental and tour operator in Tamil Nadu, India, chatting with a customer on the company website.
+Today is ${todayISO()} (Asia/Kolkata). Reply language: ${$("#langSel").value==="ta-IN"?"Tamil (தமிழ்), simple and polite":"match the customer (English or Tamil)"}.
+${isSample()?"IMPORTANT: Business data is SAMPLE placeholder data. When quoting vehicles, rates or fares, say they're sample figures and that booking requests aren't open yet.":""}
+Rules:
+1. Every business fact (vehicles, rates, availability, fares, payment, policies, contacts, booking status) must come from a tool. Never invent. Empty value = owner hasn't provided it; offer to escalate.
+2. Prices only via estimate_fare or prepare_booking. No fare arithmetic yourself.
+3. Distance: lookup_route first; if not found${geoAvail()?', get_route_distance (map) and use that km with km_source "map"; only if that fails':""}, use your own approximate road km with km_source "approx" and say so.
+4. Check get_customer_account early: if they can't book, explain the reason. Use their saved name and phone; don't ask again if present.
+5. Collect missing details one or two at a time: pickup city, destination, start date, days, passengers, round trip or one way. Convert relative dates to YYYY-MM-DD.
+6. Recommend the smallest comfortable vehicle, check_availability, then prepare_booking. Tell them to review the card and tap "Confirm & send request". You never confirm bookings or take payment; the owner confirms after verifying the advance.
+7. Places to visit: a few from general knowledge labelled as suggestions, plus route stops.
+8. Can't resolve it or they want a person: share owner contacts and offer escalate_to_owner.
+${tAvail()?"10. Flights and hotels: use search_flights / search_hotels (results appear on the page). Collect from, to, dates and travellers first. For a budget, compare it with the returned totals. The customer selects, approves and pays on the page; you never book or pay.":""}
+11. Booking status questions (cab, flight or hotel; "where is my booking", "is my hotel confirmed", "refund?"): always call get_booking_status first and answer from it. Say "Confirmed" only when the stage is confirmed or completed; "Paid · waiting for airline/hotel confirmation" is NOT confirmed. Give the reference, provider PNR/code, amounts, refund status and the next step. For a failed or expired flight/hotel offer find_alternatives, and remind them a replacement needs their fresh approval.
+12. Trip planning ("Dubai for 5 days with family, budget ₹80,000"): extract the details and call save_trip_plan with ONLY what they said. Ask for anything listed as missing (dates, travellers, starting city) one or two at a time; never assume. Then search (flights/hotels if available), call get_trip_budget, and present total vs budget, what isn't priced yet, and cheaper options if over budget. Recommend the most suitable option (price, timing, stops, refund terms, preferences), not automatically the cheapest.
+15. Weather and location: for trips within 16 days call get_weather for the destination and dates; plan indoor/temple visits on rainy days and early starts on very hot days. Beyond 16 days say the forecast isn't out yet. Use get_my_location for the starting city when they shared it.
+13. Itineraries: when asked, call save_itinerary_draft with realistic days (nearby places together, travel time, meal breaks). Call them suggestions; don't invent exact opening hours, ticket prices or weather.
+14. Preferences: get_preferences when it helps; save_preferences only when the customer asks you to remember something; delete_preferences when asked.
+9. Short replies: 2-6 lines, plain text, "- " bullets if needed. Never ask for or repeat card numbers, CVV, OTP or passwords.`}
+async function ask(text){
+  if(S.busy)return;
+  S.chat.push({role:"user",content:text});saveChat();drawChat();
+  if(!S.sample){reply(offlineReply(text));return}
+  S.busy=true;$("#stopBtn").hidden=false;$("#sendBtn").disabled=true;
+  const M=$("#msgs"),bubble=document.createElement("div");bubble.className="msg ai";bubble.innerHTML='<span class="typing"><span></span><span></span><span></span></span>';M.append(bubble);M.scrollTop=M.scrollHeight;
+  S.pendingDraft=null;S.ctl=new AbortController();
+  const tools=TOOLS().map(t=>({...t,execute:async(i,c)=>{bubble.innerHTML=`<span class="typing"><span></span><span></span><span></span></span><span class="tool">${esc(t.name.replaceAll("_"," "))}…</span>`;return t.execute(i,c)}}));
+  const turns=[{role:"user",content:rules()},...S.chat.slice(-16).map(m=>({role:m.role,content:m.content}))];
+  try{
+    const{text:out}=await S.sample(turns,{tools,signal:S.ctl.signal,modelTier:"quick",onText:({text})=>{bubble.innerHTML=fmtAI(text.split(/\n\n(?=\S)/).slice(-1)[0]||text);M.scrollTop=M.scrollHeight}});
+    bubble.remove();reply(out.trim().split(/\n{2,}/).slice(-4).join("\n\n")||out,S.pendingDraft);
+  }catch(e){bubble.remove();
+    const msg={not_granted:"I need permission to use Claude on this page. You can still book with the form below.",rate_limited:"I'm getting too many requests right now. Try again in a minute, or use the booking form.",cancelled:"Stopped.",session_expired:"Please sign in again to chat.",sampling_disabled:"AI chat isn't available on this account. Use the booking form or call the owner.",tools_unavailable:"The agent can't reach the booking tools in this view. Please use the booking form.",refused:"I can't help with that one. Ask me about trips, vehicles, fares or bookings."}[e?.code]||"Something went wrong reaching the agent. Try again, or use the booking form.";
+    if(e?.code==="not_granted"||e?.code==="sampling_disabled"){S.sample=null;setAgentStatus(false,"AI unavailable — use the booking form")}
+    reply((e?.text?e.text+"\n\n":"")+msg,S.pendingDraft);
+  }finally{S.busy=false;$("#stopBtn").hidden=true;$("#sendBtn").disabled=false}
+}
+function reply(text,draft){S.chat.push({role:"assistant",content:text,draft:draft||undefined});saveChat();drawChat();speak(text)}
+/* Works without AI: booking status straight from the booking data. */
+function statusReply(q){
+  if(S.role==="guest")return"Please sign in (My account) and ask again. Bookings are private to each account.";
+  const list=statusBook(),m=String(q).toUpperCase().match(/\b(ST|FL|HT)-[A-Z0-9-]{4,}/);
+  let pick=m?list.filter(x=>x.ref.toUpperCase()===m[0]):list;
+  if(!m&&/hotel/i.test(q))pick=list.filter(x=>x.type==="hotel");else if(!m&&/flight|pnr|ticket/i.test(q))pick=list.filter(x=>x.type==="flight");else if(!m&&/cab|car|vehicle|driver/i.test(q))pick=list.filter(x=>x.type==="cab");
+  if(!pick.length)return m?`I couldn't find ${m[0]} in your bookings.`:"You have no bookings of that kind yet.";
+  return pick.slice(0,4).map(x=>`${x.ref} · ${x.title}\n- Status: ${x.status}${x.provider_reference?` (ref ${x.provider_reference})`:""}\n- ${x.next_step}`).join("\n\n");
+}
+function offlineReply(q){const n=norm(q),c=cfg();
+  if(/status|booking|booked|confirm|refund|hotel|flight|pnr|my trip|driver|cancel/.test(n)&&!/policy|how do i|terms/.test(n))return statusReply(q);
+  if(/contact|owner|phone|call|number|whatsapp/.test(n))return`You can reach the owner at:\n- Phone: ${c.phone||"not provided yet"}\n- WhatsApp: ${c.whatsapp||"not provided yet"}\n- Email: ${c.email||"not provided yet"}`;
+  if(/pay|cancel|refund|advance/.test(n))return`Payment: ${(c.paymentMethods||[]).join(", ")}. Advance ${c.advancePercent}% to hold the vehicle.\n${c.paymentTerms}\nCancellation: ${c.cancellationPolicy||"not published yet — ask the owner."}`;
+  return S.role==="owner"?"The AI agent is switched off because ANTHROPIC_API_KEY isn't set in the server's .env file. Add it from console.anthropic.com → API Keys and restart the server. Until then I can answer booking status, contacts and payment questions.":"The AI agent isn't available right now, but I can answer booking status, contact and payment questions. You can also book with the form below, or reach the owner under Contact."}
+function speak(t){if($("#speakBtn").getAttribute("aria-pressed")!=="true")return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t.replace(/[*•]/g,"").replace(/^\s*-\s/gm,"").replace(/\[.*?\]/g,"").slice(0,600));u.lang=$("#langSel").value;u.rate=1.02;speechSynthesis.speak(u)}catch{}}
+function initVoice(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition,btn=$("#micBtn");
+  if(!SR){btn.onclick=()=>toast("Voice input isn't supported in this browser. Try Chrome, or type your request.",true);return}
+  let rec=null;
+  btn.onclick=()=>{if(rec){rec.stop();return}
+    rec=new SR();rec.lang=$("#langSel").value;rec.interimResults=true;rec.continuous=false;btn.classList.add("rec");let fin="";
+    rec.onresult=e=>{let s="";for(const r of e.results){s+=r[0].transcript;if(r.isFinal)fin=s}$("#chatIn").value=s};
+    rec.onerror=e=>toast(e.error==="not-allowed"||e.error==="service-not-allowed"?"Microphone access is blocked in this view. Type your request instead.":"Didn't catch that. Try again or type.",true);
+    rec.onend=()=>{btn.classList.remove("rec");rec=null;const v=(fin||$("#chatIn").value).trim();if(v){$("#chatIn").value="";ask(v)}};
+    try{rec.start()}catch{btn.classList.remove("rec");rec=null;toast("Couldn't start the microphone. Type instead.",true)}};
+}
+
+/* ================= staff console ================= */
+const OTABS=[["overview","Overview"],["bookings","Bookings"],["travel","Flights & hotels"],["trips","Trip sheets"],["fleet","Fleet & rates"],["business","Business setup"],["routes","Routes"],["calendar","Calendar"],["gallery","Live gallery"],["photos","Photos"],["support","Messages"],["team","Team & roles"],["notify","Notifications"],["ready","Launch readiness"]];
+let draft=null;
+function renderOwner(){
+  const show=isStaff();
+  $("#ownerLink").hidden=$("#ownerLink2").hidden=$("#owner").hidden=!show;
+  if(!show)return;
+  $("#ownerTitle").textContent=S.role==="driver"?"Driver duty sheet":S.role==="pending"?"Staff console":"Owner console";
+  if(S.role==="pending"){$("#ownerTabs").innerHTML="";$("#ownerBody").innerHTML=`<div class="empty">You have staff access, but no role yet. Ask the owner to add you under Team &amp; roles. Your Claude name is <b>${esc(S.me?.name||"unknown")}</b>.</div>`;return}
+  const tabs=OTABS.filter(([k])=>can(k));
+  if(!S.ownerTab||!can(S.ownerTab))S.ownerTab=tabs[0]?.[0];
+  const bks=allBookings(),pend=bks.filter(b=>OPEN.includes(b.status)).length;
+  $("#ownerBadge").hidden=!pend||!can("bookings");$("#ownerBadge").textContent=pend;
+  $("#ownerTabs").innerHTML=tabs.map(([k,l])=>`<button role="tab" type="button" data-otab="${k}" aria-selected="${S.ownerTab===k}">${l}${k==="bookings"&&pend?` (${pend})`:""}</button>`).join("");
+  const B=$("#ownerBody"),tab=S.ownerTab;
+  if(["business","fleet","routes"].includes(tab)&&draft?.dirty&&B.dataset.tab===tab)return;
+  if(document.activeElement&&B.contains(document.activeElement)&&document.activeElement.matches("input,textarea,select"))return;
+  B.dataset.tab=tab;
+  B.innerHTML=({notify:oNotify,travel:oTravel,overview:()=>oOverview(bks),bookings:()=>oBookings(bks),trips:()=>oTrips(bks),fleet:oFleet,business:oBusiness,routes:oRoutes,calendar:oCalendar,gallery:oGallery,photos:oPhotos,support:oSupport,team:oTeam,ready:oReady})[tab]();
+  labelTables(B);
+}
+/* Phones: each table row becomes a card; every cell is labelled with its column name. */
+function labelTables(root){root.querySelectorAll("table").forEach(t=>{const hs=[...t.querySelectorAll("thead th")].map(h=>h.textContent.trim());if(!hs.length)return;t.classList.add("rtable");t.querySelectorAll("tbody tr").forEach(r=>[...r.children].forEach((td,i)=>{if(hs[i])td.dataset.l=hs[i]}))})}
+function oOverview(bks){
+  const by=s=>bks.filter(b=>b.status===s).length,won=bks.filter(b=>["confirmed","on_trip","completed"].includes(b.status));
+  const value=won.reduce((s,b)=>s+((b.lockedFare||b.fare)?.total||0),0);
+  const collected=bks.filter(b=>b.status==="completed").reduce((s,b)=>s+(finalBill(b)?.grand||0),0);
+  const conv=bks.length?Math.round(won.length/bks.length*100):0;
+  const up=won.filter(b=>b.status==="confirmed"&&b.date>=todayISO()).sort((a,b)=>a.date<b.date?-1:1).slice(0,6);
+  const routes={},vehs={};bks.forEach(b=>{const k=b.from+" → "+b.to;routes[k]=(routes[k]||0)+1;vehs[b.vehicleName]=(vehs[b.vehicleName]||0)+1});
+  const bars=o=>{const e=Object.entries(o).sort((a,b)=>b[1]-a[1]).slice(0,6),m=Math.max(1,...e.map(x=>x[1]));return e.length?e.map(([k,v])=>`<div class="bar"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(k)}</span><span class="trackbg"><i style="width:${v/m*100}%"></i></span><span class="num">${v}</span></div>`).join(""):'<p class="muted small">No bookings yet.</p>'};
+  const miss=missingInfo().filter(x=>!x.ok).length;
+  const mfaTip=window.claude?.auth&&S.role==="owner"&&!S.me?.twoFactor?`<div class="blocked" style="margin-bottom:16px"><b>Protect the owner account with two-step verification.</b><p class="small">Anyone with your password could change rates, see customers and issue refunds. Add a code from your phone at sign-in.</p><a class="btn sm primary" href="#security">Turn it on</a></div>`:"";
+  return`${mfaTip}<div class="kpis"><div class="panel kpi"><b>${bks.length}</b><span>Requests</span></div><div class="panel kpi"><b style="color:var(--info)">${by("payment_submitted")}</b><span>Payments to verify</span></div><div class="panel kpi"><b style="color:var(--warn)">${by("awaiting_payment")}</b><span>Awaiting advance</span></div><div class="panel kpi"><b style="color:var(--info)">${by("on_trip")}</b><span>On the road now</span></div><div class="panel kpi"><b>${inr(value)}</b><span>Confirmed value</span></div><div class="panel kpi"><b>${inr(collected)}</b><span>Billed (completed)</span></div><div class="panel kpi"><b>${conv}%</b><span>Request → confirmed</span></div><div class="panel kpi"><b style="color:${miss?"var(--signal)":"var(--ok)"}">${miss}</b><span>Setup items missing</span></div></div>
+  <div class="grid g2" style="margin-top:16px"><div class="panel" style="padding:16px"><h3 style="margin-bottom:12px">Upcoming trips</h3>${up.map(b=>`<div class="contact-row" style="padding:8px 0"><span><b>${fmtDate(b.date)}</b> · ${esc(b.from)} → ${esc(b.to)}</span><span class="small ${b.assign?"muted":""}" ${b.assign?"":'style="color:var(--signal)"'}>${b.assign?esc(b.assign.driverName+" · "+b.assign.vehicleNo):"No driver yet"}</span></div>`).join("")||'<p class="muted small">No confirmed trips ahead.</p>'}</div>
+  <div class="panel" style="padding:16px"><h3 style="margin-bottom:12px">Top routes</h3><div class="bars">${bars(routes)}</div></div><div class="panel" style="padding:16px"><h3 style="margin-bottom:12px">Vehicles requested</h3><div class="bars">${bars(vehs)}</div></div></div>`;
+}
+function custChips(uid){const st=customerStats(uid),c=S.customers[uid]||{};return`${c.verified?'<span class="chip ok">Phone verified</span>':'<span class="chip warn">Unverified</span>'}${st.completed?`<span class="chip info">Returning · ${st.completed} trip${st.completed>1?"s":""}</span>`:'<span class="chip mut">New customer</span>'}${st.cancelled>1?`<span class="chip bad">${st.cancelled} cancellations</span>`:""}${c.blocked?'<span class="chip bad">Blocked</span>':""}`}
+function oBookings(bks){
+  const f=S.bkFilter,list=bks.filter(b=>f==="all"||(f==="open"?OPEN.includes(b.status):f==="active"?["confirmed","on_trip"].includes(b.status):b.status===f));
+  return`<div class="seg" role="group" style="margin-bottom:14px;flex-wrap:wrap">${[["open","Open"],["active","Confirmed & on trip"],["completed","Completed"],["all","All"]].map(([k,l])=>`<button type="button" data-bkf="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div>
+  <div class="grid g2">${list.map(b=>{const st=STATUS[b.status]||{l:b.status,c:"mut"};const v=veh(b.vehicleId);const fresh=v?priceWith(rateCard(v),b.type==="oneway"?b.km:b.km*2,b.days):null;const mismatch=fresh&&!b.lockedFare&&Math.abs(fresh.total-(b.fare?.total||0))>1;const trusted=isTrusted(b.uid);const blocked=S.customers[b.uid]?.blocked;
+    return`<article class="panel bk"><div class="trip-top"><div><span class="mono small muted">${esc(b.ref)} · ${b.source==="agent"?"via AI agent":"via form"}</span><h3>${esc(b.from)} → ${esc(b.to)}</h3></div><span class="chip ${st.c}">${esc(st.l)}</span></div>
+      <div class="row" style="display:flex;flex-wrap:wrap;gap:6px">${custChips(b.uid)}</div>
+      <dl class="kv"><dt>Customer</dt><dd>${esc(b.name)} · <span class="mono" style="user-select:all">${esc(b.phone)}</span></dd><dt>Dates</dt><dd>${fmtDate(b.date)} – ${fmtDate(b.endDate)} (${b.days}d) ${b.time?"· "+esc(b.time):""}</dd><dt>Vehicle</dt><dd>${esc(b.vehicleName)} · ${b.pax} pax · ${b.type==="oneway"?"one way":"round"}</dd><dt>Pickup</dt><dd>${esc(b.pickup||"—")}</dd><dt>Fare</dt><dd class="num">${inr((b.lockedFare||fresh||b.fare)?.total)} ${b.lockedFare?"(locked)":"(current rate card)"} · advance ${inr((b.lockedFare||fresh||b.fare)?.advance)}</dd>${b.payment?`<dt>Payment</dt><dd>${esc(b.payment.method)} · UTR <span class="mono" style="user-select:all">${esc(b.payment.utr)}</span></dd>`:""}${b.notes?`<dt>Notes</dt><dd>${esc(b.notes)}</dd>`:""}</dl>
+      ${b.paidOnline?`<p class="chip ok">Paid online ${inr(b.paidOnline.amount)} · <span class="mono" style="user-select:all">${esc(b.paidOnline.paymentId)}</span></p>`:""}
+      ${b.refund?`<p class="chip info">Refunded ${inr(b.refund.amount)}${b.refund.full?" (full)":""}</p>`:""}
+      ${b.paidOnline&&S.role==="owner"&&window.claude?.payments&&!b.refund?.full&&["cancelled","rejected","changes_requested","completed"].includes(b.status)?`<div class="refundbox"><label class="f"><span>Refund amount ₹ (blank = full)</span><input data-refamt="${esc(b.id)}" type="number" min="1" max="${b.paidOnline.amount-(b.refund?.amount||0)}" inputmode="decimal"></label><button type="button" class="btn sm danger" data-refund="${esc(b.id)}" data-uid="${esc(b.uid)}">Refund via Razorpay</button></div>`:""}
+      ${b.payment?.proofId?`<a class="proof" href="${img(b.payment.proofId)}" target="_blank" rel="noopener"><img src="${img(b.payment.proofId)}" alt="Payment screenshot" loading="lazy"><span>Payment screenshot · open full size</span></a>`:""}
+      ${mismatch?`<p class="note bad">The customer's estimate (${inr(b.fare?.total)}) differs from the current rate card (${inr(fresh.total)}). Confirming locks the rate card price.</p>`:""}
+      ${blocked?'<p class="note bad">This customer is blocked. Decline unless you have spoken to them.</p>':""}
+      ${OPEN.includes(b.status)?`<input data-onote="${esc(b.id)}" placeholder="Note to customer (required for Ask for info)" aria-label="Note to customer">
+      <div class="bk-actions">${b.status==="payment_submitted"?`<button class="btn sm primary" data-oact="confirm" data-id="${esc(b.id)}" data-uid="${esc(b.uid)}">Payment verified · Confirm</button>`:""}<button class="btn sm" data-oact="confirm_noadv" data-id="${esc(b.id)}" data-uid="${esc(b.uid)}" ${trusted?"":'disabled title="Only for verified or returning customers"'}>Confirm without advance</button><button class="btn sm" data-oact="changes_requested" data-id="${esc(b.id)}" data-uid="${esc(b.uid)}">Ask for info</button><button class="btn sm danger" data-oact="rejected" data-id="${esc(b.id)}" data-uid="${esc(b.uid)}">Not available</button></div>`:""}
+      ${["confirmed"].includes(b.status)?assignHTML(b):""}
+      ${["confirmed","on_trip"].includes(b.status)?`<div class="bk-actions"><button class="btn sm" data-gotrip="${esc(b.id)}">Open trip sheet</button><button class="btn sm danger" data-oact="cancelled" data-id="${esc(b.id)}" data-uid="${esc(b.uid)}">Cancel trip</button></div>`:""}
+      <div class="bk-actions"><button class="btn sm ghost" data-verify="${esc(b.uid)}">${S.customers[b.uid]?.verified?"Remove verification":"Mark phone verified"}</button>${S.role==="owner"?`<button class="btn sm ghost danger" data-blockc="${esc(b.uid)}">${blocked?"Unblock customer":"Block customer"}</button>`:""}</div>
+    </article>`}).join("")||'<div class="empty">Nothing here. New requests appear live with a notification.</div>'}</div>`;
+}
+function assignHTML(b){
+  const drivers=Object.entries(S.roles.staff||{}).filter(([,s])=>s.role==="driver");
+  return`<div class="assign"><div class="eyebrow">Driver &amp; vehicle ${b.assign?`· now: ${esc(b.assign.driverName)} · ${esc(b.assign.vehicleNo)}`:""}</div>${drivers.length?`<div class="form-grid"><label class="f"><span>Driver</span><select data-drv="${esc(b.id)}">${drivers.map(([id,s])=>`<option value="${esc(id)}" ${b.assign?.driverId===id?"selected":""}>${esc(s.name)}</option>`).join("")}</select></label><label class="f"><span>Vehicle number</span><input data-vno="${esc(b.id)}" value="${esc(b.assign?.vehicleNo||"")}" placeholder="TN 45 AB 1234"></label></div><div class="bk-actions"><button class="btn sm primary" data-assign="${esc(b.id)}" data-uid="${esc(b.uid)}">${b.assign?"Change assignment":"Assign driver"}</button></div>`:`<p class="small muted">${S.role==="owner"?"Add drivers under Team &amp; roles first.":"Ask the owner to add drivers to the team."}</p>`}</div>`;
+}
+function oTrips(bks){
+  let list=bks.filter(b=>["confirmed","on_trip"].includes(b.status)||(b.status==="completed"&&Date.now()-(b.trip?.end?.at||0)<3*864e5));
+  if(S.role==="driver")list=list.filter(b=>b.assign?.driverId===S.uid);
+  list.sort((a,b)=>a.date<b.date?-1:1);
+  return`<p class="small muted" style="margin-bottom:14px">${S.role==="driver"?"Your assigned trips. Photos you add here appear on the customer's screen instantly.":"Confirmed and running trips. Drivers fill these from their phones; you can too."} Each step needs a photo: vehicle at pickup, odometer at start, toll/parking receipts, odometer at end. The end reading produces the final bill.</p>
+  <div class="grid g2">${list.map(b=>{const st=STATUS[b.status];const f=finalBill(b);const started=!!b.trip?.start;
+    const step=b.status==="completed"?null:!b.assign?"assign":!Object.values(b.trip?.photos||{}).some(p=>p.kind==="pickup")&&!started?"pickup":!started?"start":"end";
+    return`<article class="panel bk" id="trip-${esc(b.id)}"><div class="trip-top"><div><span class="mono small muted">${esc(b.ref)}</span><h3>${esc(b.from)} → ${esc(b.to)}</h3></div><span class="chip ${st.c}">${st.l}</span></div>
+      <dl class="kv"><dt>Customer</dt><dd>${esc(b.name)} · <span class="mono" style="user-select:all">${esc(b.phone)}</span></dd><dt>Pickup</dt><dd>${fmtDate(b.date)} ${esc(b.time||"")} · ${esc(b.pickup||"address not given")}</dd><dt>Vehicle</dt><dd>${esc(b.vehicleName)}${b.assign?` · <span class="mono">${esc(b.assign.vehicleNo)}</span> · ${esc(b.assign.driverName)}`:""}</dd>${b.notes?`<dt>Notes</dt><dd>${esc(b.notes)}</dd>`:""}${started?`<dt>Start km</dt><dd class="num">${b.trip.start.km}</dd>`:""}</dl>
+      ${photoStrip(b.trip)}
+      ${step==="assign"?`<p class="note bad">No driver assigned yet.</p>`:""}
+      ${step&&step!=="assign"?`<div class="tripform" data-tripbox="${esc(b.id)}" data-uid="${esc(b.uid)}">
+        <div class="seg" role="group" style="flex-wrap:wrap">${(started?[["receipt","Receipt"],["end","End trip"]]:[["pickup","Pickup photo"],["start","Start trip"]]).map(([k,l])=>`<button type="button" data-tkind="${k}" aria-pressed="${k===step}">${l}</button>`).join("")}</div>
+        <div class="form-grid" data-tfields="${step}">${tripFields(step)}</div>
+        <div class="bk-actions"><button class="btn sm primary" data-tgo="${esc(b.id)}">${({pickup:"Upload pickup photo",start:"Start trip",receipt:"Add receipt",end:"End trip & bill"})[step]}</button></div></div>`:""}
+      ${f?finalHTML(b):""}
+    </article>`}).join("")||`<div class="empty">${S.role==="driver"?"No trips assigned to you right now. New assignments appear here with a notification.":"No confirmed trips right now."}</div>`}</div>`;
+}
+function tripFields(k){
+  const photo=`<label class="f"><span>Photo</span><input type="file" accept="image/*" capture="environment" data-tfile></label>`;
+  if(k==="start"||k==="end")return photo+`<label class="f"><span>Odometer km</span><input type="number" min="0" inputmode="numeric" data-tkm></label>`;
+  if(k==="receipt")return photo+`<label class="f"><span>For</span><input data-tlabel placeholder="Toll / Parking / Permit"></label><label class="f"><span>Amount ₹</span><input type="number" min="1" inputmode="numeric" data-tamt></label>`;
+  return photo;
+}
+function oFleet(){
+  const vs=draft?.vehicles||structuredClone(cfg().vehicles);draft={vehicles:vs,dirty:!!draft?.dirty};
+  return`${isSample()?'<p class="note bad" style="margin-bottom:12px">These are sample vehicles. Replace them with your real fleet, units and rates, then save.</p>':""}
+  <div class="tbl-wrap"><table><thead><tr><th>Photo</th><th>Vehicle name</th><th>Type</th><th>Seats</th><th>AC</th><th>Units</th><th>₹/km</th><th>Min km/day</th><th>Bata/day</th><th>Luggage</th><th></th></tr></thead><tbody>
+  ${vs.map((v,i)=>`<tr data-vrow="${i}"><td><label class="thumb" title="Upload a real photo">${v.photoId?`<img src="${img(v.photoId)}" alt="">`:"+ Photo"}<input type="file" accept="image/*" data-vphoto="${i}" hidden></label></td><td><input data-vf="name" value="${esc(v.name)}" aria-label="Vehicle name"></td><td><select data-vf="type" aria-label="Type">${["sedan","suv","traveller","bus"].map(t=>`<option ${v.type===t?"selected":""}>${t}</option>`).join("")}</select></td><td><input data-vf="seats" type="number" min="1" value="${v.seats}" style="width:64px" aria-label="Seats"></td><td><input data-vf="ac" type="checkbox" ${v.ac?"checked":""} style="width:auto" aria-label="AC"></td><td><input data-vf="count" type="number" min="0" value="${v.count}" style="width:64px" aria-label="Units"></td><td><input data-vf="ratePerKm" type="number" min="0" step="0.5" value="${v.ratePerKm}" style="width:76px" aria-label="Rate per km"></td><td><input data-vf="minKmPerDay" type="number" min="0" value="${v.minKmPerDay}" style="width:76px" aria-label="Min km per day"></td><td><input data-vf="driverBata" type="number" min="0" value="${v.driverBata}" style="width:80px" aria-label="Driver bata"></td><td><input data-vf="luggage" value="${esc(v.luggage||"")}" aria-label="Luggage"></td><td><button type="button" class="btn sm danger" data-vdel="${i}">Remove</button></td></tr>`).join("")}
+  </tbody></table></div><div class="form-actions"><button type="button" class="btn" data-vadd="1">Add vehicle</button><span style="display:flex;gap:8px"><button type="button" class="btn ghost" data-odiscard="1">Discard</button><button type="button" class="btn primary" data-osave="fleet">Save fleet &amp; rates</button></span></div>
+  <p class="small muted" style="margin-top:8px">Rate changes apply to new requests. Confirmed bookings keep the rate locked at confirmation.</p>`;
+}
+function oBusiness(){
+  const c=draft?.biz||structuredClone(cfg());draft={biz:c,dirty:!!draft?.dirty};
+  const f=(k,l,t="text",x="")=>`<label class="f"><span>${l}</span><input data-bf="${k}" type="${t}" value="${esc(c[k]??"")}" ${x}></label>`;
+  const ta=(k,l)=>`<label class="f"><span>${l}</span><textarea data-bf="${k}" rows="3">${esc(c[k]??"")}</textarea></label>`;
+  return`<div class="panel" style="padding:20px;display:grid;gap:18px">
+   <div><h3>Contact</h3><div class="form-grid" style="margin-top:10px">${f("name","Business name")}${f("phone","Phone","tel")}${f("whatsapp","WhatsApp","tel")}${f("email","Email","email")}${f("hours","Working hours","text",'placeholder="Mon–Sun, 6 AM – 10 PM"')}</div><div class="form-grid" style="margin-top:12px">${f("address","Office address")}${f("servedAreas","Areas served")}</div></div>
+   <div><h3>Payments</h3><div style="display:flex;flex-wrap:wrap;gap:12px;margin:10px 0">${["UPI","Bank transfer","Card","Cash to driver"].map(m=>`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-pm="${m}" ${(c.paymentMethods||[]).includes(m)?"checked":""} style="width:auto">${m}</label>`).join("")}</div>
+    <div class="form-grid">${f("upiId","UPI ID","text",'placeholder="name@bank"')}${f("advancePercent","Advance %","number",'min="0" max="100"')}${f("gstPercent","GST %","number",'min="0" max="28"')}${f("nightCharge","Night halt ₹/night","number",'min="0"')}</div>
+    <div class="form-grid" style="margin-top:12px">${ta("bankDetails","Bank details (account name, number, IFSC)")}${ta("paymentTerms","Payment terms")}</div></div>
+   <div><h3>Social media &amp; music</h3><p class="small muted" style="margin-top:4px">Full https links. Only filled links show on the site; WhatsApp uses the number above.</p><div class="form-grid" style="margin-top:10px">${[["instagram","Instagram page"],["facebook","Facebook page"],["youtube","YouTube channel"],["x","X (Twitter)"],["linkedin","LinkedIn"],["googleReviews","Google reviews link"],["mapLink","Map / directions link"]].map(([k,l])=>`<label class="f"><span>${l}</span><input data-soc="${k}" type="url" value="${esc((c.social||{})[k]||"")}" placeholder="https://"></label>`).join("")}</div>
+    <div class="form-grid" style="margin-top:12px">${f("musicUrl","Background music file (optional)","text",'placeholder="https://…/music.mp3 or /music/theme.mp3"')}</div><p class="small muted" style="margin-top:6px">Leave blank to use the built-in original music. Use only music you own or have a licence for.</p></div>
+   <div><h3>Promo figures (optional)</h3><p class="small muted" style="margin-top:4px">Shown in the "at a glance" strip only when filled. Leave blank rather than guess.</p><div class="form-grid" style="margin-top:10px">${f("yearsInBusiness","Years in business","text",'placeholder="e.g. 12"')}${f("tripsCompleted","Trips completed","text",'placeholder="e.g. 8,000+"')}</div></div>
+   <div><h3>Booking rules</h3><div class="form-grid" style="margin-top:10px">${f("cancelCutoffHours","Online cancellation closes (hours before pickup)","number",'min="0" max="168"')}${f("maxOpenRequests","Max unpaid requests per customer","number",'min="1" max="10"')}</div></div>
+   <div><h3>Policies</h3><div class="form-grid" style="margin-top:10px">${ta("cancellationPolicy","Cancellation & refund policy")}${ta("extrasPolicy","Tolls, parking, permits")}${ta("kmPolicy","Km & day counting")}</div></div>
+   <div class="form-actions"><span class="small muted">${isSample()?"Publishing replaces the sample data and opens booking requests.":"Changes go live for customers and the agent immediately."}</span><span style="display:flex;gap:8px"><button type="button" class="btn ghost" data-odiscard="1">Discard</button><button type="button" class="btn primary" data-osave="business">${isSample()?"Save &amp; publish":"Save"}</button></span></div></div>`;
+}
+function oRoutes(){
+  const rs=draft?.routes||structuredClone(cfg().routes);draft={routes:rs,dirty:!!draft?.dirty};
+  return`<div class="tbl-wrap"><table><thead><tr><th>From</th><th>To</th><th>One-way km</th><th>Via</th><th>Stops (separate with ;)</th><th></th></tr></thead><tbody>${rs.map((r,i)=>`<tr data-rrow="${i}"><td><input data-rf="from" value="${esc(r.from)}" aria-label="From"></td><td><input data-rf="to" value="${esc(r.to)}" aria-label="To"></td><td><input data-rf="km" type="number" min="1" value="${r.km}" style="width:80px" aria-label="Km"></td><td><input data-rf="via" value="${esc(r.via||"")}" aria-label="Via"></td><td><input data-rf="stops" value="${esc(r.stops||"")}" aria-label="Stops"></td><td><button type="button" class="btn sm danger" data-rdel="${i}">Remove</button></td></tr>`).join("")}</tbody></table></div>
+  <div class="form-actions"><button type="button" class="btn" data-radd="1">Add route</button><span style="display:flex;gap:8px"><button type="button" class="btn ghost" data-odiscard="1">Discard</button><button type="button" class="btn primary" data-osave="routes">Save routes</button></span></div><p class="small muted" style="margin-top:8px">Stop names matching a Live gallery photo's place show that photo on the Routes section.</p>`;
+}
+function oCalendar(){
+  const bl=Object.entries(S.avail.blocks||{}).sort((a,b)=>a[1].from<b[1].from?-1:1);
+  return`<div class="panel" style="padding:16px;display:grid;gap:12px"><h3>Block a vehicle</h3><p class="small muted">Confirmed bookings block a unit automatically and free it when the trip ends or is cancelled.</p>
+   <div class="form-grid"><label class="f"><span>Vehicle</span><select id="blV">${cfg().vehicles.map(v=>`<option value="${esc(v.id)}">${esc(v.name)}</option>`).join("")}</select></label><label class="f"><span>From</span><input id="blF" type="date" value="${todayISO()}"></label><label class="f"><span>To</span><input id="blT" type="date" value="${todayISO()}"></label><label class="f"><span>Reason</span><input id="blR" placeholder="Phone booking / service"></label></div>
+   <div class="form-actions"><span></span><button type="button" class="btn primary" data-oblock="1">Add block</button></div></div>
+   <div class="grid" style="margin-top:14px">${bl.map(([id,b])=>`<div class="panel" style="padding:12px;display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center"><span><b>${esc(veh(b.vehicleId)?.name||b.vehicleId)}</b> · ${fmtDate(b.from)} – ${fmtDate(b.to)} <span class="muted">· ${esc(b.reason||"")}</span></span>${/^m/.test(id)?`<button type="button" class="btn sm danger" data-bldel="${esc(id)}">Remove</button>`:'<span class="small muted">From booking</span>'}</div>`).join("")||'<div class="empty">No blocks. All units are free on every date.</div>'}</div>`;
+}
+function oGallery(){
+  const items=Object.entries(S.gallery.items||{}).sort((a,b)=>b[1].at-a[1].at);
+  return`<form class="panel" id="galForm" style="padding:16px;display:grid;gap:12px"><h3>Add a live photo</h3><p class="small muted">Photos appear on the public Live gallery instantly. Name the place exactly as a route stop (e.g. "Meenakshi Amman Temple") to show it on that stop's card.</p>
+    <div class="form-grid"><label class="f"><span>Photo</span><input type="file" accept="image/*" capture="environment" id="galFile" required></label><label class="f"><span>Place</span><input id="galPlace" list="stopList" placeholder="Meenakshi Amman Temple"></label><label class="f"><span>Caption</span><input id="galCap" placeholder="Sunrise darshan, Diwali week"></label></div>
+    <datalist id="stopList">${[...new Set(cfg().routes.flatMap(r=>String(r.stops||"").split(";").map(s=>s.trim()).filter(Boolean)))].map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
+    <p class="small muted">Only upload photos you took or have rights to. Don't include customers' faces without their consent.</p>
+    <div class="form-actions"><span></span><button class="btn primary" type="submit">Upload &amp; publish</button></div></form>
+  <div class="ggrid-admin">${items.map(([k,g])=>`<figure><img src="${img(g.id)}" alt="" loading="lazy"><figcaption><b>${esc(g.place||"—")}</b> ${esc(g.caption||"")}<br><span class="small muted">${fmtTime(g.at)}</span></figcaption><button type="button" class="btn sm danger" data-gdel="${esc(k)}">Remove</button></figure>`).join("")}</div>`;
+}
+function oSupport(){
+  const ts=Object.entries(S.allReq).flatMap(([uid,r])=>Object.entries(r.tickets||{}).map(([id,t])=>({id,uid,...t,resolved:!!S.allDec[uid]?.tickets?.[id]?.resolved}))).sort((a,b)=>b.at-a.at);
+  return`<div class="grid g2">${ts.map(t=>`<article class="panel bk"><div class="trip-top"><b>${esc(t.name||"Customer")}</b><span class="chip ${t.resolved?"ok":"warn"}">${t.resolved?"Resolved":"Open"}</span></div><p class="small muted">${fmtTime(t.at)} · ${t.via==="agent"?"escalated by AI agent":"contact form"} · <span class="mono" style="user-select:all">${esc(t.phone||"")}</span></p><p style="white-space:pre-line">${esc(t.message)}</p>${t.resolved?"":`<div class="bk-actions"><button type="button" class="btn sm" data-tres="${esc(t.id)}" data-uid="${esc(t.uid)}">Mark resolved</button></div>`}</article>`).join("")||'<div class="empty">No messages yet.</div>'}</div>`;
+}
+function oTeam(){
+  const staff=Object.entries(S.roles.staff||{});
+  return`<div class="grid g2"><div class="panel" style="padding:16px;display:grid;gap:12px"><h3>Add a team member</h3>
+    <p class="small muted">${window.claude?.auth?"Step 1: ask them to create an account on this site. Step 2: find them here and give them a role. Adding someone to the team gives them staff access straight away.":"Step 1: share this page with them as an <b>Editor</b> from the page's Share menu (staff need that access level to see bookings). Step 2: find them here and give them a role."}</p>
+    <label class="f"><span>${window.claude?.auth?"Search registered users":"Search people in your organization"}</span><input id="teamQ" placeholder="Name or email" autocomplete="off"></label>
+    <div id="teamResults" class="grid" style="gap:6px"></div>
+    <div class="form-grid"><label class="f"><span>Role</span><select id="teamRole"><option value="driver">Driver — trip sheets only</option><option value="manager">Manager — everything except team</option></select></label><label class="f"><span>Phone (shown to customers)</span><input id="teamPhone" inputmode="tel"></label></div>
+    <p class="small muted">${window.claude?.auth?"The server gives every team member staff access to bookings; the Driver and Manager limits are applied by this page. Add only people you trust.":"The database lets anyone with Editor access change bookings; the Driver and Manager limits are applied by this page. Give Editor access only to people you trust."}</p></div>
+  <div class="panel" style="padding:16px"><h3 style="margin-bottom:10px">Team</h3>
+    <div class="contact-row"><span><b>${esc(S.me?.name||"You")}</b> · Owner</span><span class="chip ok">Owner</span></div>
+    ${staff.map(([id,s])=>`<div class="contact-row"><span><b>${esc(s.name)}</b> · <span class="mono small">${esc(s.phone||"no phone")}</span></span><span style="display:flex;gap:6px;align-items:center"><select data-rolechg="${esc(id)}" style="width:auto"><option value="driver" ${s.role==="driver"?"selected":""}>Driver</option><option value="manager" ${s.role==="manager"?"selected":""}>Manager</option></select><button type="button" class="btn sm danger" data-rmstaff="${esc(id)}">Remove</button></span></div>`).join("")||'<p class="small muted" style="padding-top:10px">No staff yet.</p>'}
+  </div></div>`;
+}
+function oReady(){
+  const m=missingInfo(),done=m.filter(x=>x.ok).length;
+  return`<div class="grid g2"><div class="panel" style="padding:20px"><h3>Information still needed</h3><p class="small muted" style="margin:4px 0 12px">${done} of ${m.length} ready. The agent says "not provided yet" for anything missing instead of guessing.</p><ul class="checklist">${m.map(x=>`<li class="${x.ok?"ok":""}">${esc(x.label)}</li>`).join("")}</ul></div>
+   <div class="panel plan" style="padding:20px;display:grid;gap:14px"><div><h3>How access works</h3><ol class="small"><li><b>Customers</b> sign in with Claude. They can only write their own requests, payments and messages.</li><li><b>Status, locked prices, driver assignment and trip photos</b> live in a staff-only area. Customers can read their own but can't change them.</li><li><b>Staff</b> are people you share the page with as Editor, then give a role here. Drivers see only their assigned trips.</li><li><b>Viewers</b> (view-only sharing) can browse but not book.</li></ol></div>
+   <div><h3>Next milestones</h3><ol class="small"><li>Payment gateway with webhooks to replace manual UTR checks.</li><li>Maps distance for routes not in the table.</li><li>WhatsApp / SMS alerts.</li><li>Connect the Expo app to the same data.</li></ol></div></div></div>`;
+}
+function syncDraft(){
+  if(!draft)return;
+  $$("[data-vrow]").forEach(r=>{const v=draft.vehicles[+r.dataset.vrow];r.querySelectorAll("[data-vf]").forEach(x=>{const k=x.dataset.vf;v[k]=x.type==="checkbox"?x.checked:x.type==="number"?Number(x.value):x.value})});
+  $$("[data-rrow]").forEach(r=>{const v=draft.routes[+r.dataset.rrow];r.querySelectorAll("[data-rf]").forEach(x=>{const k=x.dataset.rf;v[k]=x.type==="number"?Number(x.value):x.value.trim()})});
+  if($("[data-bf]")&&draft.biz){const b=draft.biz;$$("[data-bf]").forEach(x=>{b[x.dataset.bf]=x.type==="number"?Number(x.value):x.value.trim()});b.paymentMethods=$$("[data-pm]").filter(x=>x.checked).map(x=>x.dataset.pm);if($("[data-soc]"))b.social=Object.fromEntries($$("[data-soc]").map(x=>[x.dataset.soc,x.value.trim()]))}
+}
+async function ownerSave(kind,btn){
+  syncDraft();const base=structuredClone(cfg());let next;
+  if(kind==="fleet"){const vs=draft.vehicles;if(vs.some(v=>!v.name||!(v.seats>0)||!(v.ratePerKm>0)))return toast("Every vehicle needs a name, seats and a per-km rate.",true);next={...base,vehicles:vs.map(v=>({...v,id:v.id||("v"+uid6().toLowerCase())}))}}
+  if(kind==="routes"){const rs=draft.routes.filter(r=>r.from&&r.to);if(rs.some(r=>!(r.km>0)))return toast("Each route needs road km.",true);next={...base,routes:rs}}
+  if(kind==="business"){const b=draft.biz;if(!b.phone)return toast("Add at least a phone number.",true);
+    const badSoc=Object.entries(b.social||{}).find(([,v])=>v&&!safeHttps(v));if(badSoc)return toast(`The ${badSoc[0]} link must start with https://`,true);
+    if(b.musicUrl&&!validMusic(b.musicUrl))return toast("The music link must be an https link (or /path) to an .mp3, .m4a, .ogg or .wav file.",true);if(!(b.maxOpenRequests>=1))b.maxOpenRequests=3;next={...base,...b,vehicles:base.vehicles,routes:base.routes,sample:false}}
+  btn.disabled=true;
+  try{next.updatedAt=Date.now();await S.db.doc("site/config").set(JSON.parse(JSON.stringify(next)));draft=null;$("#ownerBody").dataset.tab="";toast(kind==="business"?"Saved. Customers and the agent now use these details.":"Saved and live.")}
+  catch(e){toast("Couldn't save. "+(e.message||""),true)}finally{btn.disabled=false}
+}
+async function teamSearch(q){
+  const el=$("#teamResults");if(!el||!S.user?.search)return;
+  try{const res=(await S.user.search(q)).filter(p=>!p.isMe).slice(0,6);
+    el.innerHTML=res.map(p=>`<div class="contact-row" style="padding:6px 0"><span>${esc(p.name||"Someone")}${p.email?` <span class="small muted">${esc(p.email)}</span>`:""}</span><span style="display:flex;gap:6px">${window.claude?.auth?`<button type="button" class="btn sm ghost" data-resetpw="${esc(p.id)}" data-name="${esc(p.name||"user")}">Reset password</button><button type="button" class="btn sm ghost" data-reset2fa="${esc(p.id)}" data-name="${esc(p.name||"user")}" title="For someone who lost their phone">Reset password + 2-step</button>`:""}<button type="button" class="btn sm primary" data-addstaff="${esc(p.id)}" data-name="${esc(p.name||"Staff")}">Add</button></span></div>`).join("")||'<p class="small muted">No one found.</p>'}
+  catch{el.innerHTML='<p class="small muted">Search isn\'t available here.</p>'}
+}
+
+/* ================= flights & hotels (self-hosted: Duffel + liteAPI) ================= */
+const TR={tab:LS.get("st.ttab","flight"),
+  f:Object.assign({from:"",to:"",date:addDays(todayISO(),14),ret:"",trip:"oneway",adults:1,children:0,infants:0,cabin:"economy"},LS.get("st.tf",{})),
+  h:Object.assign({city:"",country:"IN",checkin:addDays(todayISO(),14),checkout:addDays(todayISO(),16),rooms:1,adults:2},LS.get("st.th",{})),
+  fr:null,hr:null,loading:false,err:"",sort:"best",nonstop:false,airline:"",openHotel:null,
+  sel:LS.get("st.tsel",null),bid:LS.get("st.tbid",null),doc:{bookings:{}},all:{},quote:{},tick:null};
+const tAvail=()=>!!window.claude?.travel;
+const tTest=()=>!!window.claude?.travel?.status?.test;
+const fmtDT=s=>{try{return new Date(s).toLocaleString("en-IN",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}catch{return s}};
+const hhmm=s=>String(s||"").slice(11,16);
+const durStr=m=>`${Math.floor(m/60)}h ${String(m%60).padStart(2,"0")}m`;
+const codeOf=v=>{const m=/\(([A-Z]{3})\)\s*$/.exec(String(v||"").trim());if(m)return m[1];const t=String(v||"").trim().toUpperCase();return /^[A-Z]{3}$/.test(t)?t:""};
+const TST={awaiting_payment:{l:"Awaiting payment",c:"warn"},confirming:{l:"Confirming…",c:"info"},confirmed:{l:"Confirmed",c:"ok"},failed_refunded:{l:"Not confirmed · refunded",c:"bad"},failed_refund_pending:{l:"Not confirmed · refund pending",c:"bad"},expired:{l:"Hold expired",c:"mut"},cancelled:{l:"Cancelled",c:"mut"}};
+const ICON={flight:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 16l20-6-20-6 3 6z M5 10h9"/></svg>',hotel:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 20V6h8v14 M11 10h10v10 M3 20h18 M6 9h2 M6 13h2 M14 13h4"/></svg>'};
+const myTravel=()=>Object.values(TR.doc.bookings||{}).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+
+function renderTravel(){
+  const sec=$("#travel");if(!sec)return;
+  const on=tAvail();sec.hidden=!on;$$("[data-navtravel]").forEach(a=>a.hidden=!on);
+  if(!on)return;
+  $$("#travel [data-ttab]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.ttab===TR.tab)));
+  const st=window.claude.travel.status||{};
+  $("#travelNote").innerHTML=tTest()?'<span class="chip warn">Test mode</span> Sandbox airline and hotel data: bookings are not real tickets or rooms.':"";
+  const S1=$("#tSearch");
+  if(TR.tab==="flight"){
+    if(!st.flights){S1.innerHTML='<p class="note">Flight search isn\'t connected yet.</p>';$("#tResults").innerHTML="";return}
+    const f=TR.f;
+    S1.innerHTML=`<form id="fForm" class="tform" novalidate>
+      <div class="seg" role="group" aria-label="Trip type"><button type="button" data-ftrip="oneway" aria-pressed="${f.trip==="oneway"}">One way</button><button type="button" data-ftrip="round" aria-pressed="${f.trip==="round"}">Round trip</button></div>
+      <div class="form-grid tgrid">
+        <label class="f"><span class="lbl-row">From${geoAvail()?`<button type="button" class="locbtn" data-here="force" title="Use my current location">${PIN}<span>Near me</span></button>`:""}</span><input id="fFrom" list="fFromList" value="${esc(f.from)}" placeholder="City or airport, e.g. Chennai" autocomplete="off"><datalist id="fFromList"></datalist></label>
+        <label class="f"><span>To</span><input id="fTo" list="fToList" value="${esc(f.to)}" placeholder="e.g. Singapore" autocomplete="off"><datalist id="fToList"></datalist></label>
+        <label class="f"><span>Depart</span><input id="fDate" type="date" min="${todayISO()}" value="${esc(f.date)}"></label>
+        ${f.trip==="round"?`<label class="f"><span>Return</span><input id="fRet" type="date" min="${esc(f.date)}" value="${esc(f.ret||addDays(f.date,4))}"></label>`:""}
+        <label class="f"><span>Adults (12+)</span><input id="fAd" type="number" min="1" max="9" value="${f.adults}"></label>
+        <label class="f"><span>Children (2–11)</span><input id="fCh" type="number" min="0" max="8" value="${f.children}"></label>
+        <label class="f"><span>Infants (under 2)</span><input id="fIn" type="number" min="0" max="4" value="${f.infants}"></label>
+        <label class="f"><span>Cabin</span><select id="fCabin">${[["economy","Economy"],["premium_economy","Premium economy"],["business","Business"],["first","First"]].map(([v,l])=>`<option value="${v}" ${f.cabin===v?"selected":""}>${l}</option>`).join("")}</select></label>
+      </div>
+      <div class="form-actions"><span class="small muted">Prices are live from airlines and shown in rupees, including our service fee.</span><button class="btn primary" type="submit">Search flights</button></div></form>`;
+  }else{
+    if(!st.hotels){S1.innerHTML='<p class="note">Hotel search isn\'t connected yet.</p>';$("#tResults").innerHTML="";return}
+    const h=TR.h;
+    S1.innerHTML=`<form id="hForm" class="tform" novalidate><div class="form-grid tgrid">
+      <label class="f"><span>City</span><input id="hCity" value="${esc(h.city)}" placeholder="e.g. Madurai, Singapore"></label>
+      <label class="f"><span>Country</span><select id="hCountry">${[["IN","India"],["SG","Singapore"],["AE","UAE"],["TH","Thailand"],["MY","Malaysia"],["LK","Sri Lanka"],["GB","United Kingdom"],["US","United States"]].map(([v,l])=>`<option value="${v}" ${h.country===v?"selected":""}>${l}</option>`).join("")}</select></label>
+      <label class="f"><span>Check-in</span><input id="hIn" type="date" min="${todayISO()}" value="${esc(h.checkin)}"></label>
+      <label class="f"><span>Check-out</span><input id="hOut" type="date" min="${esc(addDays(h.checkin,1))}" value="${esc(h.checkout)}"></label>
+      <label class="f"><span>Rooms</span><input id="hRooms" type="number" min="1" max="5" value="${h.rooms}"></label>
+      <label class="f"><span>Adults</span><input id="hAd" type="number" min="1" max="20" value="${h.adults}"></label>
+    </div><div class="form-actions"><span class="small muted">Live room prices in rupees, including taxes from the hotel and our service fee.</span><button class="btn primary" type="submit">Search hotels</button></div></form>`;
+  }
+  renderTravelResults();
+}
+function skeleton(n){return`<div class="grid" style="gap:12px">${[...Array(n)].map(()=>'<div class="panel skel"><span></span><span></span><span></span></div>').join("")}</div>`}
+const prefAirline=a=>{const p=String(myPrefs().airlines||"").toLowerCase();return!!p&&p.split(/[,/]+/).map(x=>x.trim()).filter(Boolean).some(x=>String(a||"").toLowerCase().includes(x))};
+/* Business rule: recommend the most suitable fare, not automatically the cheapest. Lower score is better. */
+function flightScore(o,all){
+  const minP=Math.min(...all.map(x=>x.price.total)),mins=x=>x.slices.reduce((s,y)=>s+y.minutes,0),minM=Math.min(...all.map(mins));
+  return o.price.total/minP+0.45*mins(o)/Math.max(1,minM)+0.25*o.slices.reduce((s,y)=>s+y.stops,0)-(o.refundable?0.08:0)-(prefAirline(o.airline)?0.12:0)-(/checked/.test(o.baggage||"")?0.04:0);
+}
+function renderTravelResults(){
+  const R=$("#tResults");if(!R)return;
+  if(TR.loading){R.innerHTML=`<p class="muted small" style="margin:12px 0">Searching live ${TR.tab==="flight"?"airline fares":"hotel rooms"}…</p>${skeleton(3)}`;return}
+  if(TR.err){R.innerHTML=`<p class="note bad" style="margin-top:12px">${esc(TR.err)}</p>`;return}
+  if(TR.tab==="flight"){
+    const r=TR.fr;if(!r){R.innerHTML="";return}
+    let list=r.offers.slice();
+    if(TR.nonstop)list=list.filter(o=>o.slices.every(s=>s.stops===0));
+    if(TR.airline)list=list.filter(o=>o.airline===TR.airline);
+    if(TR.sort==="fastest")list.sort((a,b)=>a.slices.reduce((s,x)=>s+x.minutes,0)-b.slices.reduce((s,x)=>s+x.minutes,0));
+    else if(TR.sort==="earliest")list.sort((a,b)=>a.slices[0].departAt<b.slices[0].departAt?-1:1);
+    else if(TR.sort==="price")list.sort((a,b)=>a.price.total-b.price.total);
+    else list.sort((a,b)=>flightScore(a,r.offers)-flightScore(b,r.offers));
+    const best=r.offers.length?r.offers.slice().sort((a,b)=>flightScore(a,r.offers)-flightScore(b,r.offers))[0].id:null;
+    const airlines=[...new Set(r.offers.map(o=>o.airline))].sort();
+    const cheapest=r.offers.length?Math.min(...r.offers.map(o=>o.price.total)):0;
+    R.innerHTML=`<div class="tbar"><span><b>${list.length}</b> of ${r.offers.length} fares</span>
+      <label class="f inline"><span>Sort</span><select id="tSort"><option value="best" ${TR.sort==="best"?"selected":""}>Recommended</option><option value="price" ${TR.sort==="price"?"selected":""}>Cheapest</option><option value="fastest" ${TR.sort==="fastest"?"selected":""}>Fastest</option><option value="earliest" ${TR.sort==="earliest"?"selected":""}>Earliest departure</option></select></label>
+      <label class="f inline"><span>Airline</span><select id="tAir"><option value="">All airlines</option>${airlines.map(a=>`<option ${TR.airline===a?"selected":""}>${esc(a)}</option>`).join("")}</select></label>
+      <label class="chk"><input type="checkbox" id="tNon" ${TR.nonstop?"checked":""}> Non-stop only</label></div>
+      ${r.missingRates?.length&&S.role==="owner"?`<p class="note">Fares in ${esc(r.missingRates.join(", "))} are hidden until you set an exchange rate under Owner console → Flights &amp; hotels.</p>`:""}
+      <div class="grid" style="gap:12px">${list.map(o=>`<article class="panel fcard">
+        <div class="fair"><b>${esc(o.airline)}</b><span class="small muted">${esc(o.cabin)} · ${esc(o.baggage)}</span>${o.id===best?'<span class="chip sample" title="Best balance of price, journey time, stops, refund terms and your preferences">Recommended</span>':""}${o.price.total===cheapest?'<span class="chip ok">Cheapest</span>':""}${prefAirline(o.airline)?'<span class="chip info">Your airline</span>':""}${o.refundable?'<span class="chip info">Refundable</span>':'<span class="chip mut">Non-refundable</span>'}</div>
+        <div class="fslices">${o.slices.map(s=>`<div class="fsl"><div><b class="num">${hhmm(s.departAt)}</b><span>${esc(s.from)}</span></div><div class="fline"><span class="small muted">${durStr(s.minutes)}</span><i></i><span class="small ${s.stops?"":"ok-t"}">${s.stops?`${s.stops} stop${s.stops>1?"s":""}`:"Non-stop"}</span></div><div><b class="num">${hhmm(s.arriveAt)}</b><span>${esc(s.to)}</span></div></div>`).join("")}</div>
+        <div class="fbuy"><b class="num">${inr(o.price.total)}</b><span class="small muted">total, ${o.passengers.length} traveller${o.passengers.length>1?"s":""}</span><button class="btn primary sm" type="button" data-tsel="${esc(o.id)}">Select</button></div>
+      </article>`).join("")||'<div class="empty">No fares match these filters.</div>'}</div>`;
+  }else{
+    const r=TR.hr;if(!r){R.innerHTML="";return}
+    R.innerHTML=`<div class="tbar"><span><b>${r.hotels.length}</b> hotels · ${r.nights} night${r.nights>1?"s":""}</span></div>
+    <div class="hgrid">${r.hotels.map(h=>`<article class="panel hcard">
+      <div class="hphoto">${h.photo?`<img src="${esc(h.photo)}" alt="${esc(h.name)}" loading="lazy">`:destArt(h.name.length,"fort")}</div>
+      <div class="hbody"><h3>${esc(h.name)}</h3>${Number(myPrefs().hotelStars)>0&&h.stars>=Number(myPrefs().hotelStars)?`<span class="chip info" style="justify-self:start">Matches your ${esc(myPrefs().hotelStars)}★+ preference</span>`:""}<div class="small muted">${h.stars?"★".repeat(Math.round(h.stars))+" · ":""}${h.rating?`Guest rating ${h.rating}/10 · `:""}${esc(h.address||"")}</div>
+        <div class="hbuy"><span class="small muted">from</span><b class="num">${inr(h.from)}</b><span class="small muted">for the stay</span><button class="btn sm" type="button" data-hopen="${esc(h.hotelId)}" aria-expanded="${TR.openHotel===h.hotelId}">${TR.openHotel===h.hotelId?"Hide rooms":"See rooms"}</button></div>
+        ${TR.openHotel===h.hotelId?`<div class="hrates">${h.rates.map(x=>`<div class="hrate"><div><b>${esc(x.room)}</b><div class="small muted">${esc(x.board||"Room only")} · ${x.refundable?"Free cancellation (refundable)":"Non-refundable"}</div></div><b class="num">${inr(x.price.total)}</b><button class="btn primary sm" type="button" data-tsel="${esc(x.id)}">Select</button></div>`).join("")}</div>`:""}
+      </div></article>`).join("")||'<div class="empty">No rooms available for these dates. Try other dates or a nearby city.</div>'}</div>`;
+  }
+}
+let placeTimer;
+async function suggestPlaces(input){
+  clearTimeout(placeTimer);const q=input.value.trim();if(q.length<2||codeOf(q))return;
+  placeTimer=setTimeout(async()=>{try{const ps=await window.claude.travel.places(q);const dl=$("#"+input.getAttribute("list"));if(dl)dl.innerHTML=ps.map(p=>`<option value="${esc((p.city||p.name)+" — "+p.name+" ("+p.code+")")}">`).join("")}catch{}},250);
+}
+async function resolvePlace(v){const c=codeOf(v);if(c)return c;try{const ps=await window.claude.travel.places(v);return ps[0]?.code||""}catch{return""}}
+function readFlightForm(){const f=TR.f;if(!$("#fFrom"))return;f.from=$("#fFrom").value.trim();f.to=$("#fTo").value.trim();f.date=$("#fDate").value;f.ret=$("#fRet")?.value||"";f.adults=+$("#fAd").value||1;f.children=+$("#fCh").value||0;f.infants=+$("#fIn").value||0;f.cabin=$("#fCabin").value;LS.set("st.tf",f)}
+function readHotelForm(){const h=TR.h;if(!$("#hCity"))return;h.city=$("#hCity").value.trim();h.country=$("#hCountry").value;h.checkin=$("#hIn").value;h.checkout=$("#hOut").value;h.rooms=+$("#hRooms").value||1;h.adults=+$("#hAd").value||1;LS.set("st.th",h)}
+async function tSearchFlights(){
+  const f=TR.f;TR.err="";
+  const from=await resolvePlace(f.from),to=await resolvePlace(f.to);
+  if(!from||!to){TR.err="Choose the departure and arrival airports from the suggestions.";renderTravelResults();return null}
+  TR.loading=true;TR.fr=null;renderTravelResults();
+  try{TR.fr=await window.claude.travel.searchFlights({from,to,date:f.date,returnDate:f.trip==="round"?f.ret:"",adults:f.adults,children:f.children,infants:f.infants,cabin:f.cabin})}
+  catch(e){TR.err=e.message||"Search failed. Please try again."}
+  finally{TR.loading=false;renderTravelResults();renderPlanner()}
+  return TR.fr;
+}
+async function tSearchHotels(){
+  const h=TR.h;TR.err="";TR.loading=true;TR.hr=null;TR.openHotel=null;renderTravelResults();
+  try{TR.hr=await window.claude.travel.searchHotels({city:h.city,countryCode:h.country,checkin:h.checkin,checkout:h.checkout,rooms:h.rooms,adults:h.adults});if(TR.hr.hotels[0])TR.openHotel=TR.hr.hotels[0].hotelId}
+  catch(e){TR.err=e.message||"Search failed. Please try again."}
+  finally{TR.loading=false;renderTravelResults();renderPlanner()}
+  return TR.hr;
+}
+function findOffer(id){
+  for(const o of TR.fr?.offers||[])if(o.id===id)return o;
+  for(const h of TR.hr?.hotels||[])for(const r of h.rates)if(r.id===id)return r;
+  return null;
+}
+/* ---------- travel checkout pages: #trip-details → #trip-pay → #trip-confirmed ---------- */
+const TROUTE={"trip-details":1,"trip-pay":2,"trip-confirmed":3};
+function goTrip(h){if(routeHash()!==h){CK.skip=h;location.hash=h}enterTrip(h)}
+function enterTrip(h){
+  setCheckout(true);document.body.classList.add("ck-travel");$("#travelck").hidden=false;
+  if(!CK.ready){$("#tckBody").innerHTML='<p class="muted">Loading…</p>';return}
+  const b=TR.bid&&TR.doc.bookings?.[TR.bid];
+  if(h==="trip-details"&&!TR.sel){history.replaceState(null,"","#travel");setCheckout(false);exitTrip();$("#travel")?.scrollIntoView();toast("Search and select a flight or hotel first.");return}
+  if((h==="trip-pay"||h==="trip-confirmed")&&!TR.bid){history.replaceState(null,"","#trip-details");return enterTrip("trip-details")}
+  if(h==="trip-pay"&&b&&b.status!=="awaiting_payment"){history.replaceState(null,"","#trip-confirmed");h="trip-confirmed"}
+  renderTravelCk(h);window.scrollTo(0,0);
+}
+function exitTrip(){document.body.classList.remove("ck-travel");const t=$("#travelck");if(t)t.hidden=true}
+function offerSummary(o){
+  if(!o)return"";
+  if(o.kind==="flight")return`<div class="tsum">${ICON.flight}<div><b>${esc(o.airline)}</b> · ${esc(o.cabin)}${o.slices.map(s=>`<div class="small">${esc(s.fromCity||s.from)} (${esc(s.from)}) ${hhmm(s.departAt)} → ${esc(s.toCity||s.to)} (${esc(s.to)}) ${hhmm(s.arriveAt)} · ${fmtDT(s.departAt).split(",")[0]} · ${durStr(s.minutes)} · ${s.stops?s.stops+" stop(s)":"non-stop"}</div>`).join("")}<div class="small muted">${esc(o.baggage)} · ${o.refundable?"Refundable (fare rules apply)":"Non-refundable"}</div></div></div>`;
+  return`<div class="tsum">${ICON.hotel}<div><b>${esc(o.hotel)}</b><div class="small">${esc(o.room)} · ${esc(o.board||"Room only")}</div><div class="small">${fmtDate(o.checkin)} → ${fmtDate(o.checkout)} · ${o.nights} night(s) · ${o.rooms} room(s) · ${o.adults} adult(s)</div><div class="small muted">${o.refundable?"Refundable rate":"Non-refundable rate"}</div></div></div>`;
+}
+function priceTable(p){return`<div class="fare-lines">${p.providerCurrency!=="INR"?`<div><span>Provider price</span><span class="num">${esc(p.providerCurrency)} ${p.providerAmount} × ₹${p.rate}</span></div>`:""}<div><span>${p.providerCurrency!=="INR"?"In rupees":"Provider price"}</span><span class="num">${inr(p.base)}</span></div>${p.fee?`<div><span>Service fee (${p.feePct}%)</span><span class="num">${inr(p.fee)}</span></div>`:""}<div class="tot"><span>Total to pay</span><span class="num">${inr(p.total)}</span></div></div>`}
+function renderTravelCk(h){
+  const B=$("#tckBody");if(!B)return;const steps=["Details","Approve &amp; pay","Confirmation"],n=TROUTE[h]||1;
+  const bar=`<ol class="tsteps">${steps.map((s,i)=>`<li class="${i+1<n?"done":i+1===n?"on":""}"><b>${i+1}</b>${s}</li>`).join("")}</ol>`;
+  if(n===1){
+    const o=TR.sel,p=S.req.profile||{},meEmail=S.me?.email||"";
+    if(S.role==="guest"){B.innerHTML=`${bar}<h3>Sign in to book</h3>${offerSummary(o)}<p class="muted">Your selection is saved. Sign in or create an account to continue.</p>
+      <div class="grid g2" style="margin-top:12px"><form class="panel" id="tkLogin" style="padding:16px;display:grid;gap:10px"><b>I have an account</b><label class="f"><span>Email or mobile</span><input id="tkId" autocomplete="username" required></label><label class="f"><span>Password</span><input id="tkPw" type="password" autocomplete="current-password" required></label><button class="btn primary" type="submit">Sign in &amp; continue</button></form>
+      <form class="panel" id="tkSignup" style="padding:16px;display:grid;gap:10px"><b>I'm new here</b><div class="form-grid"><label class="f"><span>Full name</span><input id="tsuName" required></label><label class="f"><span>Mobile</span><input id="tsuPhone" inputmode="tel" required></label></div><label class="f"><span>Email</span><input id="tkEmail" type="email" required></label><label class="f"><span>Password (8+ characters)</span><input id="tkPw2" type="password" minlength="8" required></label><button class="btn primary" type="submit">Create account &amp; continue</button></form></div>`;return}
+    const [first,...rest]=String(p.name||S.me?.name||"").split(" ");const ph0=p.phone||S.me?.phone||"";const phone=ph0?("+91"+String(ph0).replace(/\D/g,"").slice(-10)):"";
+    const form=o.kind==="flight"?o.passengers.map((px,i)=>`<fieldset class="pax"><legend>Passenger ${i+1} · ${px.type==="adult"?"Adult":px.type==="child"?"Child":"Infant"}</legend><div class="form-grid">
+        <label class="f"><span>Title</span><select data-px="${i}" data-k="title">${[["mr","Mr"],["ms","Ms"],["mrs","Mrs"],["miss","Miss"],["dr","Dr"]].map(([v,l])=>`<option value="${v}">${l}</option>`).join("")}</select></label>
+        <label class="f"><span>First name (as on ID)</span><input data-px="${i}" data-k="given_name" value="${i===0?esc(first||""):""}" autocomplete="${i===0?"given-name":"off"}"></label>
+        <label class="f"><span>Last name</span><input data-px="${i}" data-k="family_name" value="${i===0?esc(rest.join(" ")):""}" autocomplete="${i===0?"family-name":"off"}"></label>
+        <label class="f"><span>Gender (as on ID)</span><select data-px="${i}" data-k="gender"><option value="m">Male</option><option value="f">Female</option></select></label>
+        <label class="f"><span>Date of birth</span><input type="date" max="${todayISO()}" data-px="${i}" data-k="born_on"></label>
+        <label class="f"><span>Email</span><input type="email" data-px="${i}" data-k="email" value="${esc(meEmail)}"></label>
+        <label class="f"><span>Phone with country code</span><input data-px="${i}" data-k="phone_number" value="${esc(phone)}" placeholder="+919876543210"></label></div></fieldset>`).join("")
+      :`<fieldset class="pax"><legend>Lead guest</legend><div class="form-grid"><label class="f"><span>First name</span><input id="tgFirst" value="${esc(first||"")}"></label><label class="f"><span>Last name</span><input id="tgLast" value="${esc(rest.join(" "))}"></label><label class="f"><span>Email (voucher goes here)</span><input id="tgEmail" type="email" value="${esc(meEmail)}"></label><label class="f"><span>Phone with country code</span><input id="tgPhone" value="${esc(phone)}" placeholder="+919876543210"></label></div></fieldset>`;
+    B.innerHTML=`${bar}<h3>Traveller details</h3>${offerSummary(o)}<p class="small muted">Price at search: <b>${inr(o.price.total)}</b>. We re-check the live price with the ${o.kind==="flight"?"airline":"hotel"} on the next step before you pay.</p>${form}
+      <div class="form-actions"><a class="btn ghost" href="#travel">← Change selection</a><button class="btn primary" type="button" data-thold="1">Check live price &amp; continue →</button></div>`;
+  }else if(n===2){
+    const b=TR.doc.bookings?.[TR.bid];
+    if(!b){B.innerHTML=`${bar}<p class="muted">Loading your booking…</p>`;return}
+    const left=b.expiresAt?Math.max(0,Math.round((Date.parse(b.expiresAt)-Date.now())/1000)):null;
+    B.innerHTML=`${bar}<h3>Approve and pay</h3><p class="mono small muted">${esc(b.ref)}</p>${offerSummary(b.offer)}
+      ${b.priceChanged?`<p class="note bad">The live price changed since your search${b.quotedTotal?` (was ${inr(b.quotedTotal)})`:""}. The new total is <b>${inr(b.price.total)}</b>.</p><label class="chk"><input type="checkbox" id="tAcceptNew"><span>I accept the new price</span></label>`:`<p class="chip ok">Live price confirmed with the ${b.kind==="flight"?"airline":"hotel"}</p>`}
+      ${b.policyChanged?'<p class="note">The hotel updated the meal plan or cancellation terms for this room. Please check them above.</p>':""}
+      ${priceTable(b.price)}
+      ${left!=null?`<p class="small muted">This price is held for <b id="tHold">${Math.floor(left/60)}:${String(left%60).padStart(2,"0")}</b>.</p>`:""}
+      <label class="chk" style="margin-top:6px"><input type="checkbox" id="tApprove"><span>I approve booking this ${b.kind} for <b>${inr(b.price.total)}</b>${b.offer.refundable?"":" (non-refundable)"}. ${esc(cfg().name)} will confirm it with the ${b.kind==="flight"?"airline":"hotel"} after payment.</span></label>
+      ${window.claude.travel.canPay?"":'<p class="note bad">Online payment isn\'t set up yet, so this can\'t be paid here. Please contact the owner.</p>'}
+      <div class="form-actions"><button class="btn ghost" type="button" data-tcancelhold="${esc(b.id)}">Cancel this hold</button><button class="btn primary" type="button" data-tpay="${esc(b.id)}" ${window.claude.travel.canPay?"":"disabled"}>Approve &amp; pay ${inr(b.price.total)}</button></div>`;
+    clearInterval(TR.tick);if(left!=null)TR.tick=setInterval(()=>{const el=$("#tHold");if(!el){clearInterval(TR.tick);return}const l=Math.max(0,Math.round((Date.parse(b.expiresAt)-Date.now())/1000));el.textContent=`${Math.floor(l/60)}:${String(l%60).padStart(2,"0")}`;if(!l){clearInterval(TR.tick);toast("The price hold expired. Search again for a fresh price.",true)}},1000);
+  }else{
+    const b=TR.doc.bookings?.[TR.bid];
+    if(!b){B.innerHTML=`${bar}<p class="muted">Loading your booking…</p>`;return}
+    const st=TST[b.status]||{l:b.status,c:"mut"};
+    let body;
+    if(b.status==="confirming"||b.status==="awaiting_payment")body=`<div class="waitbox"><span class="typing"><span></span><span></span><span></span></span><span>Payment received. Confirming with the ${b.kind==="flight"?"airline":"hotel"}… this page updates by itself.</span></div>`;
+    else if(b.status==="confirmed")body=`<div class="success"><svg viewBox="0 0 52 52" width="64" height="64" aria-hidden="true"><circle cx="26" cy="26" r="24" fill="none" stroke="currentColor" stroke-width="3"/><path d="M15 27l7 7 15-15" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg><h3>${b.kind==="flight"?"Flight booked!":"Hotel booked!"}</h3><p class="muted">${b.kind==="flight"?"Airline PNR":"Hotel reference"}: <b class="mono" style="user-select:all">${esc(b.reference||"—")}</b></p></div>
+      <div class="bk-actions" style="justify-content:center"><a class="btn" href="${esc(window.claude.travel.invoiceUrl(S.uid,b.id))}" target="_blank" rel="noopener">Download invoice</a><a class="btn primary" href="#trips">Open My Trips</a></div>`;
+    else if(b.status==="failed_refunded")body=`<p class="note bad">The ${b.kind==="flight"?"airline":"hotel"} couldn't confirm this booking (${esc(b.failure||"no longer available")}). Your ${inr(b.refund?.amount)} has been refunded automatically; it reaches your account in 5–7 working days.</p><div class="bk-actions"><button class="btn primary" type="button" data-talt="${esc(b.id)}">Find alternatives</button></div>`;
+    else body=`<p class="note">${esc(st.l)}. ${b.status==="failed_refund_pending"?"We'll refund you shortly; the owner has been alerted.":""}</p><div class="bk-actions"><a class="btn" href="#travel">Search again</a><a class="btn" href="#contact">Contact us</a></div>`;
+    B.innerHTML=`${bar}<div class="trip-top"><span class="mono small muted">${esc(b.ref)}</span><span class="chip ${st.c}">${esc(st.l)}</span></div>${offerSummary(b.offer)}${body}`;
+  }
+}
+function renderTravelTrips(){
+  const L=$("#travelTrips");if(!L)return;
+  const list=tAvail()&&S.role!=="guest"?myTravel():[];
+  L.hidden=!list.length;if(!list.length){L.innerHTML="";return}
+  L.innerHTML=`<h3 style="margin:28px 0 12px">Flights &amp; hotels</h3><div class="grid g2">${list.map(b=>{const sg=travelStage(b),st=STAGE[sg]||TST[b.status]||{l:b.status,c:"mut"},q=TR.quote[b.id];
+    const steps=["Held","Paid","Provider confirmed","Travelled"],at={pending_payment:1,provider_confirmation:2,confirmed:3,completed:4}[sg]||0,hist=Object.entries(b.history||{}).sort((x,y)=>y[0]-x[0]);
+    return`<article class="panel trip"><div class="trip-top"><div style="display:flex;gap:8px;align-items:center">${ICON[b.kind]}<span class="mono small muted">${esc(b.ref)}</span></div><span class="chip ${st.c}">${esc(st.l)}</span></div>
+      <b>${esc(b.title)}</b><div class="small muted">${fmtDate(b.travelDate)}${b.endDate&&b.endDate!==b.travelDate?" → "+fmtDate(b.endDate):""} · ${inr(b.price?.total)}${b.reference?` · ${b.kind==="flight"?"PNR":"Ref"} <span class="mono" style="user-select:all">${esc(b.reference)}</span>`:""}</div>
+      ${at?`<ol class="lc" aria-label="Booking progress">${steps.map((x,i)=>`<li class="${i<at?"done":""}">${x}</li>`).join("")}</ol>`:""}
+      ${b.refund?.amount?`<p class="chip info">Refund ${inr(b.refund.amount)} started ${dt(b.refund.at)} · 5–7 working days</p>`:""}
+      ${hist.length?`<details class="tl"><summary class="small">Timeline (${hist.length})</summary><ul>${hist.map(([t,n])=>`<li><span class="small muted">${dt(+t)}</span> ${esc(n)}</li>`).join("")}</ul></details>`:""}
+      <div class="bk-actions">
+        ${["failed","expired"].includes(sg)||(sg==="cancelled"&&b.travelDate>todayISO())?`<button class="btn sm primary" type="button" data-talt="${esc(b.id)}">Find alternatives</button>`:""}
+        ${sg==="pending_payment"?`<button class="btn sm primary" type="button" data-tgopay="${esc(b.id)}">Continue to payment</button><button class="btn sm" type="button" data-tcancelhold="${esc(b.id)}">Cancel hold</button>`:""}
+        ${b.status==="confirmed"||b.status==="cancelled"?`<a class="btn sm" href="${esc(window.claude.travel.invoiceUrl(S.uid,b.id))}" target="_blank" rel="noopener">Invoice</a>`:""}
+        ${b.status==="confirmed"&&b.travelDate>todayISO()?(q?`<span class="small">Refund if cancelled: <b>${inr(q.refund)}</b>${q.nonRefundable?" (non-refundable rate)":""}. ${esc(q.feeNote||"")}</span><button class="btn sm danger" type="button" data-tcancelyes="${esc(b.id)}">Confirm cancellation</button>`:`<button class="btn sm danger" type="button" data-tcancelq="${esc(b.id)}">Cancel booking</button>`):""}
+      </div></article>`}).join("")}</div>`;
+}
+function oNotify(){
+  if(!window.claude?.auth)return`<p class="muted">Email, WhatsApp and SMS notifications run on your own server (the downloadable version).</p>`;
+  if(!S.nst||Date.now()-S.nstAt>20e3){S.nstAt=Date.now();fetch("/api/notify/status",{credentials:"same-origin"}).then(r=>r.json()).then(j=>{const was=JSON.stringify(S.nst||{});S.nst=j;if(JSON.stringify(j)!==was&&S.ownerTab==="notify")renderOwner()}).catch(()=>{})}
+  const st=S.nst||{channels:{},log:[]},c=st.channels||{};
+  const pill=(on,l)=>`<div class="panel kpi"><b style="color:${on?"var(--ok)":"var(--muted)"}">${on?"On":"Off"}</b><span>${l}</span></div>`;
+  return`<div class="kpis">${pill(c.email,"Gmail / email")}${pill(c.whatsapp,"WhatsApp")}${pill(c.sms,"SMS")}</div>
+  <p class="small muted" style="margin:10px 0">Channels switch on when their keys are in <span class="mono">.env</span> (see README → Notifications). Customers get confirmations, driver details, your notes (last-minute changes), reminders 24 h and 2 h before pickup, flight reminders, an estimated-arrival alert, landing alerts and a trip-ending alert. You get new requests, payments, customer messages and refund problems.</p>
+  <form class="panel" id="notifyTest" style="padding:16px;display:grid;gap:10px"><h3>Send a test</h3><div class="form-grid"><label class="f"><span>Email</span><input id="ntEmail" type="email" placeholder="you@gmail.com"></label><label class="f"><span>Mobile (WhatsApp/SMS)</span><input id="ntPhone" inputmode="tel" placeholder="98765 43210"></label></div><div class="form-actions"><span class="small muted" id="ntOut">${esc(S.ntOut||"")}</span><button class="btn primary" type="submit">Send test</button></div></form>
+  <h3 style="margin:18px 0 8px">Recent messages</h3>
+  <div class="grid" style="gap:8px">${(st.log||[]).map(l=>`<div class="panel" style="padding:10px 12px;display:grid;gap:4px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="small muted">${dt(l.at)}</span>${l.ref?`<span class="mono small">${esc(l.ref)}</span>`:""}<span class="small">to ${esc(l.to||"")}</span>${Object.entries(l.ch||{}).map(([k,v])=>`<span class="chip ${v.ok?"ok":"bad"}" title="${esc(v.err||"")}">${k}${v.ok?" ✓":" ✕"}</span>`).join("")}</div><span class="small">${esc(l.text)}</span>${Object.values(l.ch||{}).some(v=>v.err)?`<span class="small bad-t">${esc(Object.entries(l.ch).filter(([,v])=>v.err).map(([k,v])=>k+": "+v.err).join(" · "))}</span>`:""}</div>`).join("")||'<p class="muted small">Nothing sent yet.</p>'}</div>`;
+}
+function oTravel(){
+  const all=Object.entries(TR.all).flatMap(([uid,d])=>Object.values(d.bookings||{}).map(b=>({...b,uid}))).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const ok=all.filter(b=>["confirmed"].includes(b.status)),c=cfg(),t=c.travel||{},fx=t.fx||{};
+  const sum=k=>ok.reduce((s,b)=>s+(b.price?.[k]||0),0);
+  if(!TR.attnAt||Date.now()-TR.attnAt>30e3){TR.attnAt=Date.now();window.claude?.travel?.attention?.().then(a=>{const was=JSON.stringify(TR.attn||[]);TR.attn=a;if(JSON.stringify(a)!==was&&S.ownerTab==="travel")renderOwner()}).catch(()=>{})}
+  const attn=TR.attn||[];
+  return`${attn.length?`<div class="blocked" style="margin:0 0 16px"><b>Needs attention (${attn.length})</b>${attn.map(a=>`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="mono small">${esc(a.ref)}</span><span class="small">${esc(a.why)}</span>${a.why==="Refund pending"&&S.role==="owner"?`<button class="btn sm primary" type="button" data-tretry="${esc(a.uid)}|${esc(a.id)}">Retry refund</button>`:""}</div>`).join("")}</div>`:""}<div class="kpis"><div class="panel kpi"><b>${ok.length}</b><span>Confirmed</span></div><div class="panel kpi"><b>${inr(sum("total"))}</b><span>Sales</span></div><div class="panel kpi"><b>${inr(sum("fee"))}</b><span>Service fees earned</span></div><div class="panel kpi"><b style="color:var(--warn)">${all.filter(b=>b.status==="awaiting_payment").length}</b><span>Unpaid holds</span></div><div class="panel kpi"><b style="color:var(--signal)">${all.filter(b=>/^failed/.test(b.status)).length}</b><span>Provider failures</span></div><div class="panel kpi"><b>${inr(all.reduce((s,b)=>s+(b.refund?.amount||0),0))}</b><span>Refunded</span></div></div>
+  <form class="panel" id="travelCfg" style="padding:16px;margin-top:16px;display:grid;gap:12px"><h3>Pricing</h3><p class="small muted">Airline fares often come in foreign currency. Set the rupee rate you charge for each, and your service fee. Fares in currencies without a rate are hidden. Use today's bank rate; don't guess.</p>
+    <div class="form-grid">${["USD","GBP","EUR","SGD","AED","THB","MYR"].map(k=>`<label class="f"><span>1 ${k} = ₹</span><input type="number" step="0.01" min="0" data-fx="${k}" value="${fx[k]??""}"></label>`).join("")}</div>
+    <div class="form-grid"><label class="f"><span>Flight service fee %</span><input type="number" step="0.1" min="0" max="30" id="tfFee" value="${t.flightFeePct??0}"></label><label class="f"><span>Hotel service fee %</span><input type="number" step="0.1" min="0" max="30" id="thFee" value="${t.hotelFeePct??0}"></label></div>
+    <div class="form-actions"><span class="small muted">${tTest()?"Test mode keys are in use.":"Live keys are in use: real tickets and rooms."}</span><button class="btn primary" type="submit">Save pricing</button></div></form>
+  <div class="grid g2" style="margin-top:16px">${all.map(b=>{const st=TST[b.status]||{l:b.status,c:"mut"};return`<article class="panel bk"><div class="trip-top"><span>${ICON[b.kind]} <span class="mono small muted">${esc(b.ref)}</span></span><span class="chip ${st.c}">${esc(st.l)}</span></div><b>${esc(b.title)}</b><div class="small muted">${fmtDate(b.travelDate)} · ${inr(b.price?.total)} (fee ${inr(b.price?.fee)}) · ${esc(b.provider)} ${b.providerOrderId?`<span class="mono">${esc(b.providerOrderId)}</span>`:""}</div>${b.reference?`<div class="small">${b.kind==="flight"?"PNR":"Ref"} <span class="mono" style="user-select:all">${esc(b.reference)}</span></div>`:""}${b.failure?`<p class="note bad">${esc(b.failure)}</p>`:""}${b.status==="confirmed"||b.status==="cancelled"?`<a class="btn sm" href="${esc(window.claude?.travel?.invoiceUrl(b.uid,b.id)||"#")}" target="_blank" rel="noopener">Invoice</a>`:""}</article>`}).join("")||'<div class="empty">No flight or hotel bookings yet.</div>'}</div>`;
+}
+
+document.addEventListener("error",e=>{const im=e.target;if(im&&im.tagName==="IMG"&&im.parentElement?.classList.contains("hphoto")){const w=document.createElement("div");w.className="ph";w.innerHTML=destArt((im.alt||"").length,"fort");im.replaceWith(w)}},true);
+/* ================= Phase 2: one booking lifecycle for cabs, flights and hotels ================= */
+const STAGE={pending_payment:{l:"Pending payment",c:"warn"},payment_processing:{l:"Payment received · being verified",c:"info"},provider_confirmation:{l:"Paid · waiting for airline/hotel confirmation",c:"info"},
+  needs_info:{l:"Owner needs information",c:"warn"},confirmed:{l:"Confirmed",c:"ok"},on_trip:{l:"On trip",c:"info"},completed:{l:"Completed",c:"ok"},failed:{l:"Failed",c:"bad"},
+  not_available:{l:"Not available",c:"bad"},cancelled:{l:"Cancelled",c:"mut"},expired:{l:"Price hold expired",c:"mut"}};
+function travelStage(b){
+  if(b.status==="awaiting_payment")return b.expiresAt&&Date.parse(b.expiresAt)<Date.now()?"expired":"pending_payment";
+  if(b.status==="confirming")return"provider_confirmation";
+  if(b.status==="confirmed")return(b.endDate||b.travelDate||"9")<todayISO()?"completed":"confirmed";
+  if(/^failed/.test(b.status))return"failed";
+  return b.status;
+}
+const cabStage=b=>({awaiting_payment:"pending_payment",payment_submitted:"payment_processing",changes_requested:"needs_info",rejected:"not_available"})[b.status]||b.status;
+const dt=ts=>ts?new Date(ts).toLocaleString("en-IN",{timeZone:"Asia/Kolkata",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}):"";
+function travelRecord(b,owner){
+  const stage=travelStage(b),hist=Object.entries(b.history||{}).sort((x,y)=>x[0]-y[0]).map(([at,note])=>({at:dt(+at),note}));
+  const next={pending_payment:`Approve and pay ${inr(b.price?.total)} on the payment page before the price hold ends (${dt(Date.parse(b.expiresAt))}).`,
+    expired:"The held price expired. Search again for a fresh live price (use Find alternatives in My Trips).",
+    provider_confirmation:`Payment is received. We are waiting for the ${b.kind==="flight"?"airline":"hotel"} to confirm. It is not confirmed yet. If they refuse, the full amount is refunded automatically.`,
+    confirmed:b.kind==="flight"?`Ticketed. Airline PNR ${b.reference}. Carry a photo ID matching the passenger names.`:`Room confirmed. Hotel confirmation code ${b.reference}. Show it with your ID at check-in.`,
+    completed:"Trip dates have passed.",
+    failed:b.status==="failed_refunded"?`The ${b.kind==="flight"?"airline":"hotel"} could not confirm. ₹${b.refund?.amount} was refunded on ${dt(b.refund?.at)}; banks usually take 5–7 working days. You can search for alternatives.`:"The provider could not confirm and the refund is pending. The owner has been alerted.",
+    cancelled:b.refund?.amount?`Cancelled. Refund of ₹${b.refund.amount} started on ${dt(b.refund.at)}; banks usually take 5–7 working days.`:"Cancelled. No refund was due under the rate rules (or nothing was paid)."}[stage]||"";
+  return{ref:b.ref,type:b.kind,title:b.title,from_date:b.travelDate,to_date:b.endDate,stage,status:STAGE[stage]?.l||b.status,
+    total_inr:b.price?.total,paid_inr:b.payment?.amount||0,provider_reference:b.reference||null,refundable:!!b.offer?.refundable,
+    refund:b.refund?{amount_inr:b.refund.amount,started:dt(b.refund.at)}:null,failure_reason:b.failure||null,
+    hold_expires:stage==="pending_payment"?dt(Date.parse(b.expiresAt)):null,invoice_available:["confirmed","completed","cancelled"].includes(stage)&&!!b.invoiceNo,
+    can_cancel:stage==="confirmed"&&b.travelDate>todayISO()?"Yes: My Trips → Cancel booking shows the refund before you confirm":"No",
+    cancellation_quote:b.cancelQuote?{refund_inr:b.cancelQuote.refund}:null,next_step:next,timeline:hist.slice(-6),...(owner?{customer:owner}:{})};
+}
+function cabRecord(b,owner){
+  const stage=cabStage(b),f=b.lockedFare||b.fare||{},fb=finalBill(b);
+  const next={pending_payment:`Pay the ₹${f.advance} advance (My Trips → Pay online) to hold the vehicle.`,payment_processing:"The owner is verifying your advance payment.",
+    needs_info:`The owner needs more information: ${b.ownerNote||"see My Trips"}.`,confirmed:b.assign?`Driver ${b.assign.driverName} (${b.assign.driverPhone}), vehicle ${b.assign.vehicleNo}.`:"Confirmed. Driver details are shared before pickup.",
+    on_trip:"Trip in progress.",completed:fb?`Final bill ₹${fb.grand}, balance ₹${fb.balance}.`:"Completed.",not_available:b.ownerNote||"The vehicle isn't available for these dates.",cancelled:b.refund?`Refund ₹${b.refund.amount} ${b.refund.status||"recorded"}.`:"Cancelled."}[stage]||"";
+  return{ref:b.ref,type:"cab",title:`${b.vehicleName||"Vehicle"} · ${b.from} → ${b.to}`,from_date:b.date,days:b.days,stage,status:STAGE[stage]?.l||b.status,
+    total_inr:f.total,advance_inr:f.advance,advance_paid:!!b.advancePaid||!!b.paidOnline,driver:b.assign?{name:b.assign.driverName,phone:b.assign.driverPhone,vehicle_no:b.assign.vehicleNo}:null,
+    owner_note:b.ownerNote||null,can_cancel:cancelRule(b).ok?"Yes: My Trips → Cancel":cancelRule(b).why,next_step:next,...(owner?{customer:owner}:{})};
+}
+/* Everything this person may see: their own bookings, or every booking for staff. */
+function statusBook(){
+  const out=[];
+  if(isStaff()&&can("bookings")){
+    allBookings().forEach(b=>out.push(cabRecord(b,S.allReq[b.uid]?.profile?.name||"")));
+    Object.entries(TR.all||{}).forEach(([uid,d])=>Object.values(d.bookings||{}).forEach(b=>out.push(travelRecord(b,b.holder?.firstName||b.passengers?.[0]?.given_name||uid))));
+  }else if(S.role!=="guest"){
+    myBookings().forEach(b=>out.push(cabRecord(b)));myTravel().forEach(b=>out.push(travelRecord(b)));
+  }
+  return out;
+}
+
+/* ================= preferences (customer-approved, reviewable, deletable) ================= */
+const PREF_FIELDS=[["airlines","Preferred airlines","e.g. IndiGo, Air India"],["cabin","Cabin","economy / premium_economy / business"],["hotelStars","Minimum hotel stars","3"],["budgetRange","Usual trip budget","₹40,000–₹80,000"],
+  ["seat","Seat","window / aisle"],["food","Food preference","veg / Jain / non-veg"],["style","Travel style","relaxed / packed / temple tours"],["family","Family-friendly places","yes / no"]];
+const NOTIFY_FIELDS=[["nEmail","Email"],["nWhatsapp","WhatsApp"],["nSms","SMS"]];
+const myPrefs=()=>S.role==="guest"?LS.get("st.prefs",{}):(S.req.prefs||{});
+async function savePrefs(patch){
+  const clean={};for(const [k] of [...PREF_FIELDS,...NOTIFY_FIELDS])if(k in patch)clean[k]=String(patch[k]??"").trim().slice(0,120);
+  if(S.role==="guest"){LS.set("st.prefs",{...LS.get("st.prefs",{}),...clean});renderPrefs();return}
+  await writeDoc("requests/"+S.uid,{prefs:clean});S.req.prefs={...(S.req.prefs||{}),...clean};
+}
+function renderPrefs(){
+  const P=$("#prefsBody");if(!P)return;if(S.role==="guest"||isStaff()){P.innerHTML="";return}
+  const p=myPrefs(),has=PREF_FIELDS.some(([k])=>p[k]);
+  P.innerHTML=`<form class="panel" id="prefsForm" style="padding:20px;display:grid;gap:12px;margin-top:16px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline"><h3>Travel preferences</h3><span class="small muted">Saved only when you choose. The agent uses them to suggest options; it never books without your approval.</span></div>
+    <div class="form-grid">${PREF_FIELDS.map(([k,l,ph])=>`<label class="f"><span>${l}</span><input data-pref="${k}" value="${esc(p[k]||"")}" placeholder="${esc(ph)}"></label>`).join("")}</div>
+    <fieldset class="pax"><legend>Booking notifications</legend><p class="small muted" style="margin:0 0 8px">Confirmations, driver details, last-minute changes, pickup and flight reminders, arrival and trip-ending alerts. Sent to ${esc(S.me?.email||"your email")} and ${esc(S.req.profile?.phone||S.me?.phone||"your mobile")}.</p>
+      <div style="display:flex;gap:18px;flex-wrap:wrap">${NOTIFY_FIELDS.map(([k,l])=>`<label class="chk"><input type="checkbox" data-notif="${k}" ${p[k]==="off"?"":"checked"}><span>${l}</span></label>`).join("")}</div></fieldset>
+    <div class="form-actions"><button class="btn ghost" type="button" data-prefclear="1" ${has?"":"disabled"}>Delete all preferences</button><button class="btn primary" type="submit">Save preferences</button></div></form>`;
+}
+
+/* ================= trip planner: requirements → budget → itinerary ================= */
+const PLAN0={origin:"",destination:"",startDate:"",nights:"",adults:"",children:"",budget:"",tripType:"",interests:"",extra:{food:"",activities:"",other:""},itinerary:[]};
+const myPlan=()=>({...structuredClone(PLAN0),...(S.role==="guest"?LS.get("st.plan",{}):(S.req.plan||{}))});
+async function savePlan(patch){
+  const cur=myPlan(),next={...cur,...patch,extra:{...cur.extra,...(patch.extra||{})},updatedAt:Date.now()};
+  if(Array.isArray(patch.itinerary))next.itinerary=patch.itinerary.slice(0,15);
+  if(S.role==="guest"){LS.set("st.plan",next);renderPlanner();return next}
+  await writeDoc("requests/"+S.uid,{plan:JSON.parse(JSON.stringify(next))});S.req.plan=next;return next;
+}
+function planMissing(p){const m=[];if(!p.destination)m.push("destination");if(!p.startDate)m.push("start date");if(!(Number(p.nights)>=0)||p.nights==="")m.push("number of nights");if(!(Number(p.adults)>0))m.push("number of adults");if(!(Number(p.budget)>0))m.push("budget");if(!p.origin)m.push("starting city");return m}
+const sameCity=(a,b)=>!!a&&!!b&&(a.toLowerCase().includes(b.toLowerCase())||b.toLowerCase().includes(a.toLowerCase()));
+/* Costs come only from real sources: booked/held bookings, the live offer you selected, the cheapest live result, or our own cab rate card. */
+function planBudget(p=myPlan()){
+  const lines=[],tips=[];const pax=(Number(p.adults)||0)+(Number(p.children)||0);
+  const tb=myTravel().filter(b=>!["cancelled","expired"].includes(travelStage(b))&&b.travelDate>=(p.startDate||"0")&&(!p.destination||sameCity(b.title||"",p.destination)||sameCity(b.offer?.city||"",p.destination)));
+  const pick=kind=>{const bk=tb.find(b=>b.kind===kind&&["confirmed","provider_confirmation","completed"].includes(travelStage(b)));if(bk)return{amt:bk.price.total,src:`Booked · ${bk.ref}`,firm:true};
+    const hold=tb.find(b=>b.kind===kind&&travelStage(b)==="pending_payment");if(hold)return{amt:hold.price.total,src:`Held price · ${hold.ref} (unpaid)`,firm:true};
+    if(TR.sel?.kind===kind&&TR.sel.price)return{amt:TR.sel.price.total,src:"Your selected live offer"};
+    const r=kind==="flight"?TR.fr?.offers:TR.hr?.hotels;if(r&&r.length){const x=kind==="flight"?r[0].price.total:r[0].from;return{amt:x,src:"Cheapest live result from your last search",live:true}}
+    return null};
+  const f=pick("flight"),h=pick("hotel");
+  lines.push({k:"Flights",amt:f?.amt??null,src:f?f.src:(tAvail()?"Not searched yet":"Not available here"),firm:!!f?.firm});
+  lines.push({k:"Hotel",amt:h?.amt??null,src:h?h.src:(tAvail()?"Not searched yet":"Not available here"),firm:!!h?.firm});
+  /* Local transport: our own cab rate card for the starting city → destination, if the route is known. */
+  let cab=null;const cb=myBookings().find(b=>!["cancelled","rejected"].includes(b.status)&&p.destination&&sameCity(b.to,p.destination));
+  if(cb)cab={amt:(cb.lockedFare||cb.fare)?.total,src:`Cab booking ${cb.ref}`,firm:true};
+  else if(p.origin&&p.destination){const r=findRoute(p.origin,p.destination);const vs=cfg().vehicles.filter(v=>Number(v.seats)>=Math.max(1,pax)).sort((a,b)=>a.ratePerKm-b.ratePerKm);
+    if(r&&vs[0]){const days=Math.max(1,(Number(p.nights)||0)+1),fa=computeFare(vs[0],r.km,days,"round");cab={amt:fa.total,src:`Estimate · ${vs[0].name}, round trip, ${days} day(s)${isSample()?" (sample rates)":""}`}}}
+  lines.push({k:"Road transport (our cab)",amt:cab?.amt??null,src:cab?cab.src:"Add a starting city in Tamil Nadu, or skip if not needed",firm:!!cab?.firm});
+  for(const [k,l] of [["food","Food"],["activities","Activities & tickets"],["other","Other"]]){const v=Number(p.extra?.[k]);lines.push({k:l,amt:v>0?v:null,src:v>0?"Your estimate":"Add your estimate",own:k})}
+  const total=lines.reduce((s,x)=>s+(Number(x.amt)||0),0),budget=Number(p.budget)||0,remaining=budget?budget-total:null;
+  if(budget&&total>budget){
+    const over=total-budget;tips.push(`Over budget by ${inr(over)}.`);
+    if(TR.hr?.hotels?.length>1&&h&&!h.firm){const cheaper=TR.hr.hotels.filter(x=>x.from<h.amt).slice(-1)[0]||TR.hr.hotels[0];if(cheaper.from<h.amt)tips.push(`Cheaper stay: ${cheaper.name} from ${inr(cheaper.from)} (saves ${inr(h.amt-cheaper.from)}).`)}
+    if(TR.fr?.offers?.length&&f&&!f.firm&&TR.fr.offers[0].price.total<f.amt)tips.push(`Cheapest live fare: ${TR.fr.offers[0].airline} at ${inr(TR.fr.offers[0].price.total)} (saves ${inr(f.amt-TR.fr.offers[0].price.total)}).`);
+    if(cab&&!cab.firm)tips.push("Try fewer days with the cab, or a one-way drop.");
+    if(Number(p.nights)>1)tips.push("One night fewer reduces the hotel cost noticeably.");
+  }
+  const unknown=lines.filter(x=>x.amt==null&&!x.own).map(x=>x.k);
+  return{lines,total,budget,remaining,over:budget>0&&total>budget,tips,unknown,
+    split:budget?{transport:Math.round(budget*.35),stay:Math.round(budget*.35),food:Math.round(budget*.15),activities:Math.round(budget*.15)}:null};
+}
+function readItin(p){$$("[data-itin]").forEach(t=>{const d=p.itinerary[+t.dataset.itin];if(d)d.plan=t.value.slice(0,800)})}
+function renderPlanner0(){
+  const P=$("#plannerBody");if(!P)return;const p=myPlan(),miss=planMissing(p),B=planBudget(p);
+  const pct=B.budget?Math.min(100,Math.round(B.total/B.budget*100)):0;
+  P.innerHTML=`<datalist id="planCities">${[...new Set([...(cfg().routes||[]).flatMap(r=>[r.from,r.to]),"Chennai","Madurai","Coimbatore","Bengaluru","Hyderabad","Mumbai","Delhi","Goa","Kochi","Dubai","Singapore","Bangkok","Kuala Lumpur","Colombo","Maldives"])].map(c=>`<option value="${esc(c)}">`).join("")}</datalist><div class="plan-grid">
+  <form class="panel" id="planForm" style="padding:18px;display:grid;gap:12px;align-content:start">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><h3>1 · Your trip</h3>${miss.length?`<span class="chip warn wrapchip">Missing: ${esc(miss.join(", "))}</span>`:`<span class="chip ok">All details set</span>`}</div>
+    <div class="form-grid tgrid">
+      <label class="f"><span class="lbl-row">Starting city${geoAvail()?`<button type="button" class="locbtn" data-here="force" title="Use my current location">${PIN}<span>My location</span></button>`:""}</span><input name="origin" list="planCities" value="${esc(p.origin)}" placeholder="Chennai"></label>
+      <label class="f"><span>Destination</span><input name="destination" list="planCities" value="${esc(p.destination)}" placeholder="Madurai, Dubai…"></label>
+      <label class="f"><span>Start date</span><input name="startDate" type="date" min="${todayISO()}" value="${esc(p.startDate)}"></label>
+      <label class="f"><span>Nights</span><input name="nights" type="number" min="0" max="30" value="${esc(p.nights)}"></label>
+      <label class="f"><span>Adults</span><input name="adults" type="number" min="1" max="20" value="${esc(p.adults)}"></label>
+      <label class="f"><span>Children</span><input name="children" type="number" min="0" max="10" value="${esc(p.children)}"></label>
+      <label class="f"><span>Budget (₹)</span><input name="budget" type="number" min="0" step="500" value="${esc(p.budget)}"></label>
+      <label class="f"><span>Trip type</span><select name="tripType">${["","family","couple","solo","friends","pilgrimage","business"].map(v=>`<option value="${v}" ${p.tripType===v?"selected":""}>${v?v[0].toUpperCase()+v.slice(1):"Choose"}</option>`).join("")}</select></label>
+    </div>
+    <label class="f"><span>Interests</span><input name="interests" value="${esc(p.interests)}" placeholder="temples, beaches, food, shopping…"></label>
+    <div class="form-actions"><button class="btn ghost" type="button" data-planclear="1">Clear plan</button><button class="btn primary" type="submit">Save trip</button></div>
+  </form>
+  <div class="panel budget" style="padding:18px;display:grid;gap:10px;align-content:start">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3>2 · Budget</h3>${B.budget?`<span class="chip ${B.over?"bad":"ok"}">${B.over?"Over budget":"Within budget"}</span>`:""}</div>
+    ${B.budget?`<div class="meter ${B.over?"over":""}" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Budget used"><i style="width:${pct}%"></i></div>`:""}
+    <div class="fare-lines">${B.lines.map(x=>`<div><span>${esc(x.k)}<small class="muted" style="display:block">${esc(x.src)}</small></span>${x.own?`<input class="num bud-in" type="number" min="0" step="100" data-planextra="${x.own}" value="${x.amt??""}" placeholder="₹" aria-label="${esc(x.k)} estimate">`:`<span class="num">${x.amt!=null?inr(x.amt):"—"}</span>`}</div>`).join("")}
+      <div class="tot"><span>Total so far</span><span class="num">${inr(B.total)}</span></div>
+      ${B.budget?`<div><span>Your budget</span><span class="num">${inr(B.budget)}</span></div><div class="${B.over?"bad-t":"ok-t"}"><span><b>${B.over?"Over by":"Remaining"}</b></span><span class="num"><b>${inr(Math.abs(B.remaining))}</b></span></div>`:""}
+    </div>
+    <p class="small muted">Flight and hotel prices include taxes and our service fee. Live results aren't held until you approve on the payment page. ${B.unknown.length?`Not priced yet: ${esc(B.unknown.join(", "))}.`:""}</p>
+    ${B.tips.length?`<div class="blocked" style="margin-top:0"><b>${esc(B.tips[0])}</b>${B.tips.slice(1).map(t=>`<p class="small">${esc(t)}</p>`).join("")}</div>`:""}
+    ${B.split?`<p class="small muted">Typical split for this budget (a guide only): travel ${inr(B.split.transport)} · stay ${inr(B.split.stay)} · food ${inr(B.split.food)} · activities ${inr(B.split.activities)}.</p>`:""}
+    <div class="bk-actions" style="flex-wrap:wrap;display:flex;gap:8px">${tAvail()?`<button class="btn sm" type="button" data-planfind="flight">Search flights</button><button class="btn sm" type="button" data-planfind="hotel">Search hotels</button>`:""}<button class="btn sm" type="button" data-planfind="cab">Book a cab</button><button class="btn sm primary" type="button" data-planask="1">Ask Saarathi to plan</button></div>
+  </div></div>
+  <div class="panel" id="planGeo" style="padding:18px;margin-top:16px" hidden></div>
+  <div class="panel" style="padding:18px;margin-top:16px;display:grid;gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><h3>3 · Day-by-day plan</h3><span class="small muted">Draft suggestions. Check opening hours and local conditions before you go.</span></div>
+    ${p.itinerary.length?`<ol class="itin">${p.itinerary.map((d,i)=>`<li><div class="itin-h"><b>Day ${i+1}</b>${d.date?`<span class="small muted">${fmtDate(d.date)}</span>`:""}${d.date&&wxFor(d.date)?`<span class="chip ${wxFor(d.date).advice?"warn":"mut"}" title="${esc(wxFor(d.date).advice||"")}">${wxIcon(wxFor(d.date).icon,14)} ${wxFor(d.date).max}° ${esc(wxFor(d.date).text)}</span>`:""}<button class="btn sm ghost" type="button" data-itindel="${i}" aria-label="Remove day ${i+1}">Remove</button></div><textarea data-itin="${i}" rows="3">${esc(d.plan||"")}</textarea></li>`).join("")}</ol>`:`<p class="muted small">No plan yet. Ask Saarathi ("plan my days"), or add days yourself.</p>`}
+    <div class="form-actions" style="margin-top:0"><button class="btn sm" type="button" data-itinadd="1">Add a day</button>${p.itinerary.length?`<button class="btn sm primary" type="button" data-itinsave="1">Save plan</button>`:""}</div>
+  </div>`;
+}
+
+/* ================= notification centre ================= */
+function notifications(){
+  const out=[],now=Date.now();
+  if(S.role==="guest")return out;
+  for(const b of myTravel()){
+    for(const [at,note] of Object.entries(b.history||{}))out.push({at:+at,ref:b.ref,text:note,kind:/refund|couldn't|expired/i.test(note)?"warn":/Confirmed/.test(note)?"ok":"info"});
+    const s=travelStage(b);if(s==="confirmed"){const h=(Date.parse(b.travelDate+"T00:00:00+05:30")-now)/36e5;if(h>0&&h<48)out.push({at:now-1,ref:b.ref,text:`Reminder: ${b.kind==="flight"?"your flight":"check-in"} is ${h<24?"tomorrow":"in 2 days"} (${fmtDate(b.travelDate)}).`,kind:"info",sticky:true})}
+  }
+  for(const b of myBookings()){
+    out.push({at:b.createdAt||0,ref:b.ref,text:`Booking request sent: ${b.from} → ${b.to}`,kind:"info"});
+    if(b.payment?.at)out.push({at:b.payment.at,ref:b.ref,text:"Advance payment details sent",kind:"info"});
+    if(b.paidOnline?.at)out.push({at:b.paidOnline.at,ref:b.ref,text:`Advance paid online${b.paidOnline.amount?` (₹${b.paidOnline.amount})`:""}`,kind:"ok"});
+    if(b.decidedAt&&!["awaiting_payment"].includes(b.status))out.push({at:b.decidedAt,ref:b.ref,text:`Status: ${STATUS[b.status]?.l||b.status}${b.ownerNote?` — ${b.ownerNote}`:""}`,kind:["rejected","cancelled"].includes(b.status)?"warn":"ok"});
+    if(b.status==="confirmed"){const h=hoursToStart(b);if(h>0&&h<48)out.push({at:now-2,ref:b.ref,text:`Reminder: pickup ${h<24?"tomorrow":"in 2 days"} at ${b.time||"06:00"}.`,kind:"info",sticky:true})}
+  }
+  return out.filter(n=>n.at).sort((a,b)=>b.at-a.at).slice(0,40);
+}
+function renderBell(){
+  const btn=$("#bellBtn");if(!btn)return;btn.hidden=S.role==="guest";if(S.role==="guest")return;
+  const seen=LS.get("st.nseen."+S.uid,0),list=notifications(),unread=list.filter(n=>n.at>seen&&!n.sticky).length+list.filter(n=>n.sticky).length;
+  const c=$("#bellCount");c.hidden=!unread;c.textContent=unread>9?"9+":String(unread);
+  const P=$("#bellPanel");if(P&&!P.hidden)P.innerHTML=`<div class="bell-h"><b>Updates</b><button class="btn sm ghost" type="button" data-bellclose="1">Close</button></div>${list.length?list.map(n=>`<div class="bell-i ${n.kind}${n.at>seen&&!n.sticky?" new":""}"><span class="mono small">${esc(n.ref||"")}</span><span>${esc(n.text)}</span><span class="small muted">${n.sticky?"Upcoming":dt(n.at)}</span></div>`).join(""):`<p class="muted small" style="padding:12px">No updates yet.</p>`}<a class="btn sm" href="#trips" data-bellclose="1" style="margin:10px">Open My Trips</a>`;
+}
+
+/* ================= alternatives (fresh search; nothing is substituted without approval) ================= */
+async function findAlternatives(b){
+  if(!tAvail())throw new Error("Flight and hotel search isn't available here.");
+  if(b.kind==="flight"){const s=b.offer.slices||[];Object.assign(TR.f,{from:s[0]?.from||"",to:s[0]?.to||"",date:b.travelDate>todayISO()?b.travelDate:addDays(todayISO(),1),ret:s[1]?s[1].departAt.slice(0,10):"",trip:s[1]?"round":"oneway",
+      adults:b.passengers.filter(x=>x.type==="adult").length||1,children:b.passengers.filter(x=>x.type==="child").length,infants:b.passengers.filter(x=>x.type==="infant_without_seat").length,cabin:b.offer.cabin?.toLowerCase().replace(/\s+/g,"_")||"economy"});TR.tab="flight"}
+  else{Object.assign(TR.h,{city:b.offer.city||TR.h.city,checkin:b.travelDate>todayISO()?b.travelDate:addDays(todayISO(),1),checkout:b.endDate>todayISO()?b.endDate:addDays(todayISO(),2),rooms:b.offer.rooms||1,adults:b.offer.adults||2});TR.tab="hotel"}
+  renderTravel();location.hash="travel";const r=b.kind==="flight"?await tSearchFlights():await tSearchHotels();
+  if(!r)throw new Error(TR.err||"Search failed");
+  const was=b.price?.total||0;
+  const opts=b.kind==="flight"?r.offers.slice(0,3).map(o=>({airline:o.airline,depart:o.slices[0].departAt,stops:o.slices[0].stops,total_inr:o.price.total,difference_inr:o.price.total-was,refundable:o.refundable}))
+    :r.hotels.slice(0,3).map(x=>({hotel:x.name,stars:x.stars,rating:x.rating,from_inr:x.from,difference_inr:(x.from||0)-was}));
+  return{original_ref:b.ref,original_total_inr:was,alternatives:opts,note:"Shown on the page. The customer must select one and approve the new price; nothing is booked automatically."};
+}
+const findTravelByRef=ref=>{const R=String(ref||"").trim().toUpperCase();const all=isStaff()&&can("bookings")?Object.values(TR.all||{}).flatMap(d=>Object.values(d.bookings||{})):myTravel();return all.find(b=>b.ref.toUpperCase()===R)};
+
+/* ================= agent tools for Phase 2 ================= */
+const PHASE2_TOOLS=()=>[
+  {name:"get_booking_status",description:"Live status of cab, flight and hotel bookings from the booking system: lifecycle stage, amounts, payment, provider reference (PNR / hotel code), refund, cancellation options, next step and timeline. Pass ref (e.g. ST-…, FL-…, HT-…) for one booking; omit it to list all. Staff see every customer's bookings.",
+    inputSchema:{type:"object",properties:{ref:{type:"string"},type:{type:"string",enum:["cab","flight","hotel","any"]}}},
+    execute(i){if(S.role==="guest")return{signed_in:false,note:"Ask the customer to sign in; bookings are private to each account."};
+      let list=statusBook();if(i.type&&i.type!=="any")list=list.filter(x=>x.type===i.type);
+      if(i.ref){const R=String(i.ref).trim().toUpperCase();const hit=list.filter(x=>x.ref.toUpperCase()===R||x.ref.toUpperCase().endsWith(R));return hit.length?{bookings:hit}:{found:false,known_refs:list.slice(0,12).map(x=>x.ref)}}
+      return{count:list.length,bookings:list.slice(0,12).map(({timeline,...x})=>x)}}},
+  {name:"find_alternatives",description:"For a failed, expired or unwanted flight/hotel booking: runs a fresh live search with the same trip details, shows results on the page and returns the top options with the price difference. Never books anything.",
+    inputSchema:{type:"object",properties:{ref:{type:"string"}},required:["ref"]},
+    async execute(i){const b=findTravelByRef(i.ref);if(!b)return{found:false};return findAlternatives(b)}},
+  {name:"save_trip_plan",description:"Stores the customer's trip requirements in the Trip planner (shown on the page). Only pass values the customer actually said; never guess dates, budget or traveller counts. Returns the plan and what is still missing so you can ask.",
+    inputSchema:{type:"object",properties:{origin:{type:"string"},destination:{type:"string"},start_date:{type:"string",description:"YYYY-MM-DD"},nights:{type:"integer"},adults:{type:"integer"},children:{type:"integer"},budget_inr:{type:"number"},trip_type:{type:"string",enum:["family","couple","solo","friends","pilgrimage","business"]},interests:{type:"string"}}},
+    async execute(i){const m={origin:"origin",destination:"destination",start_date:"startDate",nights:"nights",adults:"adults",children:"children",budget_inr:"budget",trip_type:"tripType",interests:"interests"},patch={};
+      for(const [a,b] of Object.entries(m))if(i[a]!==undefined&&i[a]!==null&&i[a]!=="")patch[b]=String(i[a]);
+      if(patch.startDate&&!/^\d{4}-\d{2}-\d{2}$/.test(patch.startDate))return{error:"start_date must be YYYY-MM-DD"};
+      if(patch.startDate&&patch.startDate<todayISO())return{error:"That date is in the past. Ask for a future date."};
+      if(patch.budget&&!(Number(patch.budget)>0))return{error:"Budget must be a positive amount in rupees."};
+      const p=await savePlan(patch);renderPlanner();return{plan:{...p,itinerary:undefined},missing:planMissing(p),shown_on_page:true}}},
+  {name:"get_trip_budget",description:"Trip budget from real numbers only: booked or held flights/hotels, the selected or cheapest live search result, our cab rate card, and the customer's own food/activity estimates. Returns total, remaining or overspend, unpriced items and cheaper options.",
+    execute(){const p=myPlan(),B=planBudget(p);return{plan:{destination:p.destination,start_date:p.startDate,nights:p.nights,travellers:(Number(p.adults)||0)+(Number(p.children)||0),budget_inr:B.budget},lines:B.lines.map(x=>({item:x.k,amount_inr:x.amt,source:x.src})),total_inr:B.total,remaining_inr:B.remaining,over_budget:B.over,not_priced_yet:B.unknown,suggestions:B.tips}}},
+  {name:"save_itinerary_draft",description:"Saves a day-by-day plan to the Trip planner where the customer can edit it. Keep each day realistic: group nearby places, allow travel time and meal breaks, and say 'check timings' rather than inventing exact opening hours or weather.",
+    inputSchema:{type:"object",properties:{days:{type:"array",items:{type:"object",properties:{date:{type:"string"},plan:{type:"string"}},required:["plan"]}}},required:["days"]},
+    async execute(i){const days=(i.days||[]).slice(0,15).map(d=>({date:/^\d{4}-\d{2}-\d{2}$/.test(d.date||"")?d.date:"",plan:String(d.plan||"").slice(0,800)}));await savePlan({itinerary:days});renderPlanner();return{saved_days:days.length,shown_on_page:true}}},
+  {name:"get_preferences",description:"The customer's saved travel preferences (airlines, cabin, hotel stars, budget range, seat, food, style, family-friendly).",execute(){return{preferences:myPrefs()}}},
+  {name:"save_preferences",description:"Saves travel preferences. Only call when the customer explicitly asks you to remember something; confirm what you saved.",
+    inputSchema:{type:"object",properties:Object.fromEntries(PREF_FIELDS.map(([k])=>[k,{type:"string"}]))},
+    async execute(i){await savePrefs(i);return{saved:Object.keys(i)}}},
+  {name:"delete_preferences",description:"Deletes all saved travel preferences when the customer asks.",async execute(){await savePrefs(Object.fromEntries(PREF_FIELDS.map(([k])=>[k,""])));return{deleted:true}}}
+];
+
+/* ================= v2.8: location, maps, weather, live trip tracking ================= */
+/* Self-hosted: the server proxies maps and weather (window.claude.geo).
+   Claude-hosted preview (no server): the browser calls the same free services directly, if the preview allows it. */
+let DIRECT_GEO=null,directProbe=null;
+const geoApi=()=>window.claude?.geo||DIRECT_GEO;
+const geoAvail=()=>!!geoApi();
+const WMOC={0:["Clear sky","sun"],1:["Mainly clear","sun"],2:["Partly cloudy","cloud-sun"],3:["Overcast","cloud"],45:["Fog","fog"],48:["Fog","fog"],51:["Light drizzle","drizzle"],53:["Drizzle","drizzle"],55:["Heavy drizzle","drizzle"],61:["Light rain","rain"],63:["Rain","rain"],65:["Heavy rain","rain"],66:["Freezing rain","rain"],67:["Freezing rain","rain"],71:["Light snow","snow"],73:["Snow","snow"],75:["Heavy snow","snow"],80:["Rain showers","rain"],81:["Rain showers","rain"],82:["Violent rain showers","storm"],95:["Thunderstorm","storm"],96:["Thunderstorm with hail","storm"],99:["Thunderstorm with hail","storm"]};
+function makeDirectGeo(){
+  const get=async u=>{const c=new AbortController(),t=setTimeout(()=>c.abort(),10000);try{const r=await fetch(u,{signal:c.signal});if(!r.ok)throw new Error("The map service didn't answer.");return await r.json()}catch(e){throw new Error(e.name==="AbortError"?"The map service timed out.":e.message||"The map service is unreachable.")}finally{clearTimeout(t)}};
+  const cache=new Map(),memo=async(k,f)=>{if(cache.has(k))return cache.get(k);const v=await f();cache.set(k,v);return v};
+  const wm=c=>{const w=WMOC[c]||["Unknown","cloud"];return{text:w[0],icon:w[1]}};
+  const search=q=>memo("s:"+q.toLowerCase(),async()=>{const u=c=>`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(String(q).split(",")[0].trim())}&count=6&language=en&format=json${c?"&countryCode="+c:""}`;let j=await get(u("IN"));if(!j.results?.length)j=await get(u(""));return(j.results||[]).map(r=>({name:r.name,region:r.admin1||"",country:r.country||"",countryCode:r.country_code||"",lat:r.latitude,lon:r.longitude}))});
+  const place=async q=>{const m=/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(String(q||""));if(m)return{name:q,lat:+m[1],lon:+m[2]};const r=await search(q);if(!r.length)throw new Error(`Couldn't find "${q}" on the map.`);return r[0]};
+  const weatherAt=async(lat,lon,name,start,days)=>{const today=todayISO(),last=addDays(today,15);start=/^\d{4}-\d{2}-\d{2}$/.test(start||"")?start:today;days=Math.min(16,Math.max(1,Number(days)||1));const end=addDays(start,days-1),base={place:name||"",lat,lon,source:"Open-Meteo"};
+    if(start>last)return{...base,available:false,note:`Forecasts reach 16 days ahead. Check again from ${addDays(start,-15)}.`,days:[]};if(end<today)return{...base,available:false,note:"Those dates have passed.",days:[]};
+    const s0=start<today?today:start,e0=end>last?last:end;const j=await memo(`w:${lat.toFixed(2)},${lon.toFixed(2)}:${s0}:${e0}`,()=>get(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&current=temperature_2m,weather_code&timezone=auto&start_date=${s0}&end_date=${e0}`));
+    const d=j.daily||{};const list=(d.time||[]).map((date,i)=>{const w=wm(d.weather_code[i]),rain=d.precipitation_probability_max?.[i]??null;return{date,...w,max:Math.round(d.temperature_2m_max[i]),min:Math.round(d.temperature_2m_min[i]),rainChance:rain,advice:rain>=60||(["storm","rain"].includes(w.icon)&&rain>=40)?"Rain likely: plan indoor visits, carry an umbrella, allow extra road time":d.temperature_2m_max[i]>=37?"Very hot: sightseeing early morning and evening, carry water":""}});
+    return{...base,available:list.length>0,partial:end>last?`Forecast covers up to ${last}.`:"",current:j.current?{temp:Math.round(j.current.temperature_2m),...wm(j.current.weather_code)}:null,days:list}};
+  return{direct:true,search,
+    reverse:(lat,lon)=>memo(`r:${(+lat).toFixed(2)},${(+lon).toFixed(2)}`,async()=>{const j=await get(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&addressdetails=1&accept-language=en`);const a=j.address||{},city=a.city||a.town||a.village||a.municipality||a.county||a.state_district||"";if(!city)throw new Error("Couldn't name this location.");return{city,region:a.state||"",country:a.country||"",countryCode:(a.country_code||"").toUpperCase(),lat:+lat,lon:+lon}}),
+    route:async(from,to)=>{const a=await place(from),b=await place(to);return memo(`rt:${a.lat},${a.lon}>${b.lat},${b.lon}`,async()=>{const j=await get(`https://router.project-osrm.org/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=simplified&geometries=geojson`);const r=j.routes?.[0];if(!r)throw new Error("No road route found between these places.");const pts=(r.geometry?.coordinates||[]).map(([x,y])=>[y,x]),step=Math.max(1,Math.ceil(pts.length/400));return{from:{name:a.name,lat:a.lat,lon:a.lon},to:{name:b.name,lat:b.lat,lon:b.lon},km:Math.round(r.distance/1000),minutes:Math.round(r.duration/60),line:pts.filter((_,i)=>i%step===0||i===pts.length-1),source:"OpenStreetMap / OSRM"}})},
+    weather:async(q,start,days)=>{const p=await place(q);return weatherAt(p.lat,p.lon,p.name,start,days)},
+    ipLocate:()=>memo("ip",async()=>{const j=await get("https://ipwho.is/?fields=success,city,region,country,country_code,latitude,longitude");if(!j.success||!j.city)throw new Error("Couldn't work out your city from the internet connection.");return{city:j.city,region:j.region||"",country:j.country||"",countryCode:(j.country_code||"").toUpperCase(),lat:j.latitude,lon:j.longitude,approximate:true}}),
+    weatherAt};
+}
+/* Why maps/weather aren't showing, in plain words (never hide silently). */
+function geoStatusMsg(){
+  if(geoAvail()&&!GEO.serverErr)return"";
+  if(GEO.serverErr)return`Map and weather service can't be reached from the server: ${GEO.serverErr} Check this computer's internet connection or firewall, then restart the server.`;
+  if(window.claude?.auth&&S.sessionLoaded&&!window.claude?.geo)return"Maps and weather are switched off on this server (MAPS=off in .env).";
+  if(!window.claude?.auth&&GEO.blocked)return"Location, map and weather work on your website (run npm start and open http://localhost:3000). This Claude preview blocks internet services.";
+  return"checking";
+}
+/* Self-hosted: confirm once that the server can reach the map and weather services. */
+let serverProbe=null;
+function probeServerGeo(){
+  if(!window.claude?.geo||serverProbe)return;
+  serverProbe=window.claude.geo.weatherAt(13.08,80.27,"Chennai",todayISO(),1).then(()=>{GEO.serverErr=""}).catch(e=>{GEO.serverErr=e.message||"no answer."}).finally(()=>{renderHere();renderPlanGeo()});
+}
+/* Turn the direct client on only if this view can actually reach the services (one tiny weather call). */
+function probeDirectGeo(){
+  if(window.claude?.geo||window.claude?.auth||directProbe)return directProbe;
+  const g=makeDirectGeo();
+  directProbe=g.weatherAt(13.08,80.27,"Chennai",todayISO(),1).then(()=>{DIRECT_GEO=g;renderHere();renderPlanner();renderWizard();return true}).catch(()=>{GEO.blocked=true;renderHere();renderPlanGeo();return false});
+  return directProbe;
+}
+const GEO={here:LS.get("st.here",null),now:null,planWx:null,planRoute:null,planKey:"",track:null};
+const WXI={sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  "cloud-sun":'<path d="M12 3v1.5M5.6 5.6l1 1M3 12h1.5M17.4 6.6l1-1"/><path d="M8.5 10.5a3.5 3.5 0 0 1 6.6-1.6"/><path d="M7 20h10a4 4 0 0 0 0-8 5 5 0 0 0-9.6 1.5A3.3 3.3 0 0 0 7 20z"/>',
+  cloud:'<path d="M7 19h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.6A3.4 3.4 0 0 0 7 19z"/>',fog:'<path d="M4 10h16M3 14h18M6 18h12"/>',
+  drizzle:'<path d="M7 15h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.6A3.4 3.4 0 0 0 7 15z"/><path d="M9 18v1M13 18v1M17 18v1"/>',
+  rain:'<path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.6A3.4 3.4 0 0 0 7 14z"/><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/>',
+  storm:'<path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.6A3.4 3.4 0 0 0 7 14z"/><path d="M12 14l-2 4h3l-2 4"/>',snow:'<path d="M12 3v18M4 7.5l16 9M4 16.5l16-9"/>'};
+const wxIcon=(k,sz=22)=>`<svg viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WXI[k]||WXI.cloud}</svg>`;
+const PIN='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+const kmBetween=(a,b)=>{const R=6371,r=x=>x*Math.PI/180,dLat=r(b.lat-a.lat),dLon=r(b.lon-a.lon),h=Math.sin(dLat/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(h))};
+
+/* ---------- map (Leaflet + OpenStreetMap tiles, loaded only when a map is shown) ---------- */
+let leafletP=null;
+function loadLeaflet(){
+  if(window.L)return Promise.resolve(window.L);
+  return leafletP||(leafletP=new Promise((res,rej)=>{
+    const css=document.createElement("link");css.rel="stylesheet";css.href=window.claude?.auth?"/vendor/leaflet/leaflet.css":"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";document.head.append(css);
+    const sc=document.createElement("script");sc.src=window.claude?.auth?"/vendor/leaflet/leaflet.js":"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";sc.onload=()=>res(window.L);sc.onerror=()=>{leafletP=null;rej(new Error("Map couldn't load."))};document.head.append(sc);
+  }));
+}
+async function drawMap(el,{line,points=[],me}={}){
+  if(!el)return null;const L=await loadLeaflet();
+  if(el._map){el._map.remove();el._map=null}
+  const m=L.map(el,{scrollWheelZoom:false,attributionControl:true});el._map=m;
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:18,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(m);
+  const dot=(c,r=7)=>({radius:r,color:"#fff",weight:2,fillColor:c,fillOpacity:1});
+  const all=[];
+  if(line&&line.length>1){L.polyline(line,{color:"#E39E12",weight:5,opacity:.9}).addTo(m);all.push(...line)}
+  points.forEach((p,i)=>{L.circleMarker([p.lat,p.lon],dot(i===points.length-1?"#C0392B":"#13213A",8)).addTo(m).bindTooltip(esc(p.label||""),{permanent:points.length<=3,direction:"top",offset:[0,-6]});all.push([p.lat,p.lon])});
+  if(me){L.circleMarker([me.lat,me.lon],dot("#1f6feb",9)).addTo(m).bindTooltip("You",{permanent:true,direction:"right",offset:[8,0]});if(me.acc)L.circle([me.lat,me.lon],{radius:Math.min(me.acc,2000),color:"#1f6feb",weight:1,fillOpacity:.08}).addTo(m);all.push([me.lat,me.lon])}
+  if(all.length>1)m.fitBounds(all,{padding:[28,28]});else if(all.length)m.setView(all[0],12);else m.setView([11.1,78.6],6);
+  setTimeout(()=>m.invalidateSize(),60);return m;
+}
+
+/* ---------- where am I ---------- */
+const LOC_HELP="To get your exact city: click the lock icon left of the web address → Site settings → Location → Allow. On a Windows PC also turn on Settings → Privacy & security → Location (and 'Let desktop apps access your location').";
+function getPosition(opts={}){
+  return new Promise((res,rej)=>{
+    if(!navigator.geolocation)return rej(Object.assign(new Error("This browser can't share location."),{code:2}));
+    if(!window.isSecureContext)return rej(Object.assign(new Error("Browsers share location only on https:// or http://localhost."),{code:2}));
+    const ask=()=>navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy}),e=>rej(Object.assign(new Error(e.code===1?"Location permission is blocked for this site.":e.code===3?"Finding your location took too long.":"This device couldn't find its location (location may be turned off)."),{code:e.code})),{enableHighAccuracy:false,timeout:10000,maximumAge:10*60e3,...opts});
+    /* Already blocked for this site: don't wait for a timeout, fall back straight away. */
+    (navigator.permissions?.query({name:"geolocation"})||Promise.reject()).then(q=>q.state==="denied"?rej(Object.assign(new Error("Location permission is blocked for this site."),{code:1})):ask(),ask);
+  });
+}
+/* Exact position from the device first; if that fails, an approximate city from the internet connection.
+   An explicit tap (force) sets the starting city everywhere; the silent check only fills empty fields. */
+async function detectLocation({quiet,force}={}){
+  if(!geoAvail()){const m=geoStatusMsg();throw new Error(m&&m!=="checking"?m:"Location isn't ready yet. Try again in a moment.")}
+  let r,devErr=null;
+  try{const pos=await getPosition();r={...await geoApi().reverse(pos.lat,pos.lon),lat:pos.lat,lon:pos.lon,approximate:false}}
+  catch(e){devErr=e;
+    if(quiet&&e.code===1)return null;
+    try{r=await geoApi().ipLocate()}catch{throw new Error(`${e.message||"Couldn't get your location."} ${LOC_HELP} You can also type your city.`)}}
+  GEO.here={...r,at:Date.now()};LS.set("st.here",GEO.here);
+  const city=r.city,filled=[];
+  const T=S.wiz.trip;if(force||!T.from){if(T.from!==city){T.from=city;const rr=findRoute(T.from,T.to);T.km=rr?rr.km:"";T.kmSrc=rr?"route_table":""}saveWiz?.();filled.push("pickup")}
+  const p=myPlan();if(force||!p.origin){await savePlan({origin:city}).catch(()=>{});filled.push("trip planner")}
+  if(force||!TR.f.from){TR.f.from=city;filled.push("flight search")}
+  if(!quiet)toast(r.approximate?`Approximate location: ${city}${r.region?", "+r.region:""} (from your internet connection). ${devErr?.code===1?"Allow location for the exact city.":"Turn on location for the exact city."}`:`Starting location set to ${city}${r.region?", "+r.region:""}${filled.length?` (${filled.join(", ")})`:""}.`,false);
+  await refreshHereWeather();renderHere();renderWizard();renderPlanner();renderTravel?.();return GEO.here;
+}
+async function refreshHereWeather(){
+  if(!GEO.here||!geoAvail())return;
+  try{const w=await geoApi().weatherAt(GEO.here.lat,GEO.here.lon,GEO.here.city,todayISO(),1);GEO.now=w.current?{...w.current,today:w.days[0]}:null}catch{GEO.now=null}
+}
+function renderHere(){
+  const B=$("#hereBar");if(!B)return;B.hidden=false;
+  const msg=geoStatusMsg();
+  if(msg){B.innerHTML=msg==="checking"?`<span class="small" style="opacity:.85">${PIN} Checking location, map and weather…</span>`:`<span class="here-off">${PIN}<span>${esc(msg)}</span></span>`;return}
+  const h=GEO.here,n=GEO.now;
+  B.innerHTML=h?`<span class="here-loc">${PIN}<b>${esc(h.city)}</b>${h.region?`<span class="muted">, ${esc(h.region)}</span>`:""}${h.approximate?`<span class="small" style="opacity:.75" title="From your internet connection. Allow location for the exact city.">&nbsp;(approx.)</span>`:""}</span>${n?`<span class="here-wx" title="${esc(n.text)}">${wxIcon(n.icon,20)}<b>${n.temp}°C</b> ${esc(n.text)}${n.today?.rainChance!=null?` · rain ${n.today.rainChance}%`:""}</span>`:""}<button class="linkbtn" type="button" data-here="force">Update</button>`
+    :`<button class="btn sm ghost here-btn" type="button" data-here="force">${PIN} Use my location</button><span class="small" style="opacity:.8">for pickup, distance and local weather</span>`;
+}
+
+/* ---------- road distance from the map (wizard + planner) ---------- */
+async function fillMapKm(){
+  const T=S.wiz.trip;if(!T.from||!T.to){toast("Enter pickup city and destination first.",true);return false}
+  const note=$("#kmNote");if(note)note.textContent="Measuring the road distance on the map…";
+  try{const r=await geoApi().route(T.from,T.to);T.km=r.km;T.kmSrc="map";saveWiz?.();
+    if($("#wKm"))$("#wKm").value=r.km;if(note)note.innerHTML=`Road distance from the map: <b>${r.km} km</b> one way, about ${durStr(r.minutes)} driving (OpenStreetMap). You can adjust it.`;
+    const el=$("#wMap");if(el){el.hidden=false;drawMap(el,{line:r.line,points:[{...r.from,label:T.from},{...r.to,label:T.to}]}).catch(()=>{el.hidden=true})}
+    return true}
+  catch(e){if(note)note.textContent=(e.message||"Couldn't measure the distance.")+" Enter the approximate road km.";return false}
+}
+
+/* ---------- planner: route map + forecast for the trip dates ---------- */
+async function loadPlanGeo(){
+  if(!geoAvail())return;const p=myPlan();const key=[p.origin,p.destination,p.startDate,p.nights].join("|");
+  if(key===GEO.planKey)return;GEO.planKey=key;GEO.planWx=null;GEO.planRoute=null;
+  const tasks=[];
+  if(p.destination)tasks.push(geoApi().weather(p.destination,p.startDate||todayISO(),Math.min(16,Math.max(1,(Number(p.nights)||0)+1))).then(w=>GEO.planWx=w).catch(e=>GEO.planWx={available:false,note:e.message||"Weather unavailable."}));
+  if(p.origin&&p.destination)tasks.push(geoApi().route(p.origin,p.destination).then(r=>GEO.planRoute=r).catch(e=>GEO.planRoute={error:e.message}));
+  await Promise.all(tasks);if(GEO.planKey===key)renderPlanGeo();
+}
+function wxFor(date){return(GEO.planWx?.days||[]).find(d=>d.date===date)}
+function renderPlanGeo(){
+  const P=$("#planGeo");if(!P)return;
+  const msg=geoStatusMsg();
+  if(msg){P.hidden=false;P.innerHTML=`<div class="geo-h"><b>Route map &amp; weather</b></div><p class="small muted" style="margin:6px 0 0">${msg==="checking"?"Checking the map and weather services…":esc(msg)}</p>`;return}
+  P.hidden=false;
+  const p=myPlan(),w=GEO.planWx,r=GEO.planRoute;
+  if(!p.destination){P.innerHTML=`<p class="muted small">Add a destination to see the route map and the weather for your dates.</p>`;return}
+  const wet=(w?.days||[]).filter(d=>d.advice).length;
+  P.innerHTML=`<div class="geo-grid">
+    <div><div class="geo-h"><b>Route</b>${r&&!r.error?`<span class="small">${r.km} km · about ${durStr(r.minutes)} by road</span>`:""}</div>
+      ${r&&!r.error?`<div id="planMap" class="map"></div><p class="small muted" style="margin:6px 0 0">${esc(p.origin)} → ${esc(p.destination)} · OpenStreetMap / OSRM${findRoute(p.origin,p.destination)?"":" · fares use this distance when the route isn't in our table"}</p>`:r?.error?`<p class="small muted">${esc(r.error)}</p>`:p.origin?`<div class="skel"><span></span><span></span></div>`:`<p class="small muted">Add a starting city (or tap Use my location) to draw the route.</p>`}</div>
+    <div><div class="geo-h"><b>Weather at ${esc(p.destination)}</b>${w?.source?`<span class="small muted">${esc(w.source)}</span>`:""}</div>
+      ${!w?`<div class="skel"><span></span><span></span><span></span></div>`:w.available?`<div class="wx-row">${w.days.map(d=>`<div class="wx-day ${d.advice?"warn":""}" title="${esc(d.advice||d.text)}"><span class="small">${new Date(d.date+"T00:00:00").toLocaleDateString("en-IN",{weekday:"short",day:"numeric"})}</span>${wxIcon(d.icon,26)}<b>${d.max}°</b><span class="small muted">${d.min}°</span>${d.rainChance!=null?`<span class="small ${d.rainChance>=60?"bad-t":"muted"}">${d.rainChance}%</span>`:""}</div>`).join("")}</div>
+        ${w.partial?`<p class="small muted">${esc(w.partial)}</p>`:""}${wet?`<p class="blocked" style="margin-top:8px"><b>${wet} day${wet>1?"s":""} with a weather warning.</b> ${esc(w.days.find(d=>d.advice).advice)}. The day plan marks these days.</p>`:""}`
+        :`<p class="small muted">${esc(w.note||"No forecast for these dates.")}</p>`}</div></div>`;
+  if(r&&!r.error)drawMap($("#planMap"),{line:r.line,points:[{...r.from,label:p.origin},{...r.to,label:p.destination}]}).catch(()=>{});
+}
+
+/* ---------- live trip tracking with arrival alarm ---------- */
+function beep(){try{const A=new (window.AudioContext||window.webkitAudioContext)();[0,.35,.7].forEach(t=>{const o=A.createOscillator(),g=A.createGain();o.frequency.value=880;o.connect(g);g.connect(A.destination);g.gain.setValueAtTime(.0001,A.currentTime+t);g.gain.exponentialRampToValueAtTime(.4,A.currentTime+t+.02);g.gain.exponentialRampToValueAtTime(.0001,A.currentTime+t+.28);o.start(A.currentTime+t);o.stop(A.currentTime+t+.3)})}catch{}}
+async function startTrack(b,toward){
+  stopTrack();const dest=toward==="back"?b.from:b.to;
+  let target;try{target=await geoApi().route(b.from,b.to).then(r=>toward==="back"?r.from:r.to)}catch{try{const s=await geoApi().search(dest);target=s[0]}catch{}}
+  if(!target)return toast(`Couldn't find ${dest} on the map.`,true);
+  GEO.track={id:b.id,ref:b.ref,dest,target,radius:Number(LS.get("st.alarmKm",5))||5,alarmed:false,me:null,road:null,roadAt:0,watch:null,started:Date.now()};
+  if("Notification" in window&&Notification.permission==="default")Notification.requestPermission().catch(()=>{});
+  if(!navigator.geolocation){toast("This browser can't share location.",true);return}
+  GEO.track.watch=navigator.geolocation.watchPosition(onTrackPos,e=>{if(e.code===1){toast("Location permission was denied, so the trip can't be tracked.",true);stopTrack()}},{enableHighAccuracy:true,maximumAge:15000,timeout:30000});
+  renderTrack();$("#trackPanel")?.scrollIntoView({behavior:"smooth",block:"center"});
+}
+function stopTrack(){if(GEO.track?.watch!=null)navigator.geolocation.clearWatch(GEO.track.watch);GEO.track=null;renderTrack()}
+async function onTrackPos(pos){
+  const T=GEO.track;if(!T)return;T.me={lat:pos.coords.latitude,lon:pos.coords.longitude,acc:pos.coords.accuracy,at:Date.now()};
+  T.straight=kmBetween(T.me,T.target);
+  if(Date.now()-T.roadAt>3*60e3&&T.straight>0.5){T.roadAt=Date.now();geoApi().route(`${T.me.lat},${T.me.lon}`,`${T.target.lat},${T.target.lon}`).then(r=>{if(GEO.track===T){T.road=r;renderTrack()}}).catch(()=>{})}
+  const left=T.road?Math.min(T.road.km,Math.max(T.straight,T.road.km*(T.straight/Math.max(.1,kmBetween(T.road.from,T.target))))):T.straight;
+  T.left=left;
+  if(!T.alarmed&&left<=T.radius){T.alarmed=true;const msg=`Almost there: about ${left.toFixed(1)} km to ${T.dest}. Keep your belongings ready.`;
+    beep();try{navigator.vibrate?.([300,150,300,150,600])}catch{}
+    try{if("Notification" in window&&Notification.permission==="granted")new Notification(`${cfg().name}: arriving soon`,{body:msg,tag:"arrive-"+T.id})}catch{}
+    toast(msg)}
+  renderTrack();
+}
+function renderTrack(){
+  const P=$("#trackPanel");if(!P)return;const T=GEO.track;P.hidden=!T;if(!T){P.innerHTML="";return}
+  const eta=T.road&&T.left!=null?Math.round(T.road.minutes*(T.left/Math.max(.1,T.road.km))):null;
+  P.innerHTML=`<div class="track-h"><div><span class="eyebrow">Live trip · ${esc(T.ref)}</span><h3 style="margin:2px 0">To ${esc(T.dest)}</h3></div><button class="btn sm ghost" type="button" data-trackstop="1">Stop tracking</button></div>
+    <div class="track-stats"><div><b class="num">${T.left!=null?T.left.toFixed(1):"—"}</b><span>km to go${T.road?" (road)":" (straight line)"}</span></div><div><b class="num">${eta!=null?durStr(eta):"—"}</b><span>estimated time</span></div>
+      <label class="f"><span>Alarm when within</span><select id="trackRadius">${[2,5,10,20].map(k=>`<option value="${k}" ${T.radius===k?"selected":""}>${k} km</option>`).join("")}</select></label></div>
+    ${T.alarmed?`<p class="chip ok" style="justify-self:start">Arrival alarm sounded</p>`:""}
+    <div id="trackMap" class="map tall"></div>
+    <p class="small muted">${T.me?`Updated ${new Date(T.me.at).toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"})} · accuracy ±${Math.round(T.me.acc)} m`:"Waiting for your location…"} Keep this page open. Your position is used only to measure the remaining road distance (OpenStreetMap routing) and is never saved or shared.</p>`;
+  drawMap($("#trackMap"),{line:T.road?.line,points:[{...T.target,label:T.dest}],me:T.me}).catch(()=>{});
+}
+const trackable=b=>["confirmed","on_trip"].includes(b.status)&&b.date<=todayISO()&&addDays(b.date,Math.max(1,Number(b.days)||1)-1)>=todayISO();
+
+/* ---------- agent tools ---------- */
+const GEO_TOOLS=()=>geoAvail()?[
+  {name:"get_weather",description:"Daily weather forecast (Open-Meteo) for a place and dates: condition, max/min °C, chance of rain, and advice for rainy or very hot days. Only up to 16 days ahead; beyond that it says when the forecast will be available. Never guess weather.",
+    inputSchema:{type:"object",properties:{place:{type:"string"},start_date:{type:"string",description:"YYYY-MM-DD"},days:{type:"integer"}},required:["place"]},
+    async execute(i){const w=await geoApi().weather(String(i.place),i.start_date||todayISO(),i.days||1);return{place:w.place,available:w.available,note:w.note||w.partial||"",days:w.days.map(d=>({date:d.date,condition:d.text,max_c:d.max,min_c:d.min,rain_chance_pct:d.rainChance,advice:d.advice||null}))}}},
+  {name:"get_route_distance",description:"Road distance and driving time between two places from the map (OpenStreetMap/OSRM). Use when lookup_route doesn't have the route, then pass the km to estimate_fare.",
+    inputSchema:{type:"object",properties:{from:{type:"string"},to:{type:"string"}},required:["from","to"]},
+    async execute(i){const r=await geoApi().route(String(i.from),String(i.to));return{one_way_km:r.km,driving_minutes:r.minutes,from:r.from.name,to:r.to.name,source:"map"}}},
+  {name:"get_my_location",description:"The customer's current city if they shared their location with the site (Use my location). Never ask them to share precise coordinates in chat.",
+    async execute(){return GEO.here?{city:GEO.here.city,region:GEO.here.region,country:GEO.here.country,weather_now:GEO.now?{temp_c:GEO.now.temp,condition:GEO.now.text}:null}:{shared:false,note:"Ask which city they're starting from, or suggest the Use my location button."}}}
+]:[];
+
+function renderPlanner(){renderPlanner0();renderPlanGeo();loadPlanGeo()}
+/* ================= v2.9: background music + social links ================= */
+/* --- Social links: only https links the owner entered are shown; sample mode shows the layout for review. --- */
+const SOCIAL=[
+  {k:"whatsapp",l:"WhatsApp",svg:'<path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2z"/>'},
+  {k:"instagram",l:"Instagram",svg:'<rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r=".8"/>'},
+  {k:"facebook",l:"Facebook",svg:'<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M13 20v-7h2.5l.5-2.5h-3V9a1 1 0 0 1 1-1h2V5.5h-2.5A3 3 0 0 0 10.5 8.5v2H8V13h2.5v7"/>'},
+  {k:"youtube",l:"YouTube",svg:'<rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="M10 9.5v5l4.5-2.5z"/>'},
+  {k:"x",l:"X (Twitter)",svg:'<path d="M5 5l14 14M19 5L5 19"/>'},
+  {k:"linkedin",l:"LinkedIn",svg:'<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 10.5V17M8 7.5v.01M11.5 17v-6.5M11.5 13a2.5 2.5 0 0 1 5 0v4"/>'},
+  {k:"googleReviews",l:"Google reviews",svg:'<path d="M12 3l2.6 5.5 6 .7-4.5 4.1 1.2 5.9L12 16.3 6.7 19.2l1.2-5.9L3.4 9.2l6-.7z"/>'},
+  {k:"mapLink",l:"Directions",svg:'<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'}
+];
+const SAMPLE_SOCIAL={instagram:"https://www.instagram.com/",facebook:"https://www.facebook.com/",youtube:"https://www.youtube.com/",x:"https://x.com/",linkedin:"https://www.linkedin.com/",googleReviews:"https://www.google.com/maps",mapLink:"https://www.openstreetmap.org/"};
+const safeHttps=u=>{try{const x=new URL(String(u||"").trim());return x.protocol==="https:"?x.href:""}catch{return""}};
+function waLink(){const d=String(cfg().whatsapp||cfg().phone||"").replace(/\D/g,"");const n=d.length===10?"91"+d:d.length>=11&&d.length<=15?d:"";return n?`https://wa.me/${n}?text=${encodeURIComponent("Hi "+(cfg().name||"")+", I'd like to book a trip.")}`:""}
+function socialLinks(){
+  const c=cfg(),s=c.social||{},out=[];
+  for(const it of SOCIAL){
+    let href=it.k==="whatsapp"?waLink():safeHttps(s[it.k]);
+    if(!href&&isSample()&&SAMPLE_SOCIAL[it.k])href=SAMPLE_SOCIAL[it.k];
+    if(href)out.push({...it,href});
+  }
+  return out;
+}
+const socialIcon=(it,cls="soc")=>`<a class="${cls} soc-${it.k}" href="${esc(it.href)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(it.l)}" title="${esc(it.l)}${isSample()&&it.k!=="whatsapp"?" (sample link — set yours in Business setup)":""}"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${it.svg}</svg>${cls==="soc-big"?`<span>${esc(it.l)}</span>`:""}</a>`;
+function renderSocial(){
+  const list=socialLinks();
+  const F=$("#footSocial");if(F)F.innerHTML=list.map(it=>socialIcon(it)).join("");
+  const follow=list.filter(it=>it.k!=="whatsapp");
+  const C=$("#contactSocial");if(C){C.hidden=!follow.length;C.innerHTML=follow.length?`<div class="eyebrow" style="margin-bottom:8px">Follow us</div><div class="soc-row">${follow.map(it=>socialIcon(it,"soc-big")).join("")}</div>${isSample()?'<p class="small muted" style="margin-top:8px">Sample links for review. The owner sets the real ones in Owner console → Business setup.</p>':""}`:""}
+  const W=$("#waFloat"),wl=waLink();if(W){W.hidden=!wl&&!isSample();W.href=wl||"#contact";if(wl){W.target="_blank";W.title="Chat on WhatsApp"}else{W.removeAttribute("target");W.title="WhatsApp (sample — the owner adds the number in Business setup)"}}
+}
+
+/* --- Music: original, generated in the browser (tanpura-style drone + soft Mohanam melody), or the owner's own file. --- */
+const MUSIC={on:false,ctx:null,nodes:null,timer:null,audio:null,vol:Number(LS.get("st.musicVol",0.35))};
+function reverbIR(ctx,sec=2.6){const n=ctx.sampleRate*sec,b=ctx.createBuffer(2,n,ctx.sampleRate);for(let ch=0;ch<2;ch++){const d=b.getChannelData(ch);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2.4)}return b}
+function startSynth(){
+  const ctx=MUSIC.ctx||(MUSIC.ctx=new (window.AudioContext||window.webkitAudioContext)());ctx.resume?.();
+  const master=ctx.createGain();master.gain.value=0;master.connect(ctx.destination);
+  const rev=ctx.createConvolver();rev.buffer=reverbIR(ctx);const wet=ctx.createGain();wet.gain.value=.45;rev.connect(wet);wet.connect(master);
+  const dry=ctx.createGain();dry.gain.value=.7;dry.connect(master);
+  master.gain.linearRampToValueAtTime(MUSIC.vol,ctx.currentTime+2.5);
+  const SA=138.59; /* C#3 */
+  const pluck=(f,t,len,g)=>{const o=ctx.createOscillator(),o2=ctx.createOscillator(),v=ctx.createGain(),lp=ctx.createBiquadFilter();o.type="sawtooth";o2.type="triangle";o.frequency.value=f;o2.frequency.value=f*2.003;lp.type="lowpass";lp.frequency.value=1400;
+    v.gain.setValueAtTime(.0001,t);v.gain.exponentialRampToValueAtTime(g,t+.04);v.gain.exponentialRampToValueAtTime(.0001,t+len);o.connect(lp);o2.connect(lp);lp.connect(v);v.connect(dry);v.connect(rev);o.start(t);o2.start(t);o.stop(t+len+.05);o2.stop(t+len+.05)};
+  const note=(f,t,len,g)=>{const o=ctx.createOscillator(),v=ctx.createGain();o.type="sine";o.frequency.value=f;const vib=ctx.createOscillator(),vg=ctx.createGain();vib.frequency.value=5;vg.gain.value=f*.006;vib.connect(vg);vg.connect(o.frequency);
+    v.gain.setValueAtTime(.0001,t);v.gain.exponentialRampToValueAtTime(g,t+.12);v.gain.setValueAtTime(g,t+len*.6);v.gain.exponentialRampToValueAtTime(.0001,t+len);o.connect(v);v.connect(dry);v.connect(rev);o.start(t);vib.start(t);o.stop(t+len+.1);vib.stop(t+len+.1)};
+  /* Tanpura cycle: Pa – Sa' – Sa' – Sa, every 1.6 s per string */
+  const cycle=[SA*1.5/2*2,SA*2,SA*2,SA];
+  /* Mohanam scale (S R2 G3 P D2) across two octaves */
+  const scale=[1,9/8,5/4,3/2,5/3].flatMap(r=>[SA*2*r,SA*4*r]).sort((a,b)=>a-b);
+  let step=0,idx=3,next=ctx.currentTime+.2;
+  const tick=()=>{if(!MUSIC.on)return;const now=ctx.currentTime;
+    while(next<now+1.2){
+      pluck(cycle[step%4],next,3.2,.06);
+      if(step%2===0&&Math.random()<.75){idx=Math.max(0,Math.min(scale.length-1,idx+[-2,-1,-1,1,1,2,0][Math.floor(Math.random()*7)]));note(scale[idx],next+.05,1.4+Math.random()*1.4,.045)}
+      if(step%8===7&&Math.random()<.5)note(scale[Math.max(0,idx-1)],next+.85,1.2,.035);
+      step++;next+=1.6/1.0*0.5+0.55;
+    }};
+  tick();MUSIC.timer=setInterval(tick,400);MUSIC.nodes={master};
+}
+function stopSynth(){clearInterval(MUSIC.timer);MUSIC.timer=null;const m=MUSIC.nodes?.master;if(m&&MUSIC.ctx){const t=MUSIC.ctx.currentTime;m.gain.cancelScheduledValues(t);m.gain.setValueAtTime(m.gain.value,t);m.gain.linearRampToValueAtTime(0,t+1.2);setTimeout(()=>{try{m.disconnect()}catch{}},1400)}MUSIC.nodes=null}
+function validMusic(u){u=String(u||"").trim();if(/^\/[\w\-./]+\.(mp3|m4a|ogg|wav)$/i.test(u)&&!u.includes(".."))return u;return/\.(mp3|m4a|ogg|wav)(\?|$)/i.test(u)?safeHttps(u):""}
+function musicUrl(){return validMusic(cfg().musicUrl)}
+async function setMusic(on){
+  MUSIC.on=on;LS.set("st.music",on);
+  const url=musicUrl();
+  if(on){
+    if(url){if(!MUSIC.audio||MUSIC.audio.dataset.src!==url){MUSIC.audio?.pause();MUSIC.audio=new Audio(url);MUSIC.audio.dataset.src=url;MUSIC.audio.loop=true;MUSIC.audio.preload="auto"}MUSIC.audio.volume=MUSIC.vol;
+      try{await MUSIC.audio.play()}catch{MUSIC.on=false;LS.set("st.music",false);toast("The music file couldn't play. Check the music link in Business setup.",true)}}
+    else startSynth();
+  }else{MUSIC.audio?.pause();stopSynth()}
+  renderMusic();
+}
+function renderMusic(){
+  const B=$("#musicBtn");if(!B)return;B.setAttribute("aria-pressed",String(MUSIC.on));B.classList.toggle("on",MUSIC.on);
+  B.title=MUSIC.on?"Pause music":"Play music";B.querySelector(".mlabel").textContent=MUSIC.on?"Music on":"Music";
+  const V=$("#musicVol");if(V){V.hidden=!MUSIC.on;V.value=String(MUSIC.vol)}
+  $$("[data-music] span").forEach(x=>x.textContent=MUSIC.on?"Music: on":"Music: off");
+  document.body.classList.toggle("staff-view",isStaff());
+}
+function setVolume(v){MUSIC.vol=Math.max(0,Math.min(1,v));LS.set("st.musicVol",MUSIC.vol);if(MUSIC.audio)MUSIC.audio.volume=MUSIC.vol;const m=MUSIC.nodes?.master;if(m&&MUSIC.ctx)m.gain.setTargetAtTime(MUSIC.vol,MUSIC.ctx.currentTime,.2)}
+/* Browsers allow sound only after a tap; if the visitor left music on last time, resume on their first tap anywhere. */
+if(LS.get("st.music",false)){const resume=e=>{if(e.target.closest?.("#musicBtn,#musicVol"))return;if(!MUSIC.on)setMusic(true);removeEventListener("pointerdown",resume)};addEventListener("pointerdown",resume)}
+document.addEventListener("focusin",e=>{if(e.target.matches?.("textarea,input:not([type=range]),select"))document.body.classList.add("kbd-open")});
+document.addEventListener("focusout",()=>document.body.classList.remove("kbd-open"));
+document.addEventListener("visibilitychange",()=>{if(!MUSIC.ctx)return;if(document.hidden)MUSIC.ctx.suspend?.();else if(MUSIC.on)MUSIC.ctx.resume?.()});
+
+/* ================= v3.0: form validation (inline messages on every form) ================= */
+const V_RE={email:/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i,phone:/^(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}$/,e164:/^\+[1-9]\d{7,14}$/,name:/^[\p{L}][\p{L} .'-]{1,59}$/u,place:/^[\p{L}][\p{L}\d .,'()-]{1,79}$/u,upi:/^[\w.\-]{2,}@[a-z]{2,}$/i};
+const VRULES={
+  wFrom:"required|place",wTo:"required|place|differs:wFrom",wDate:"required|today",wDays:"required|int:1:30",wPax:"required|int:1:80",wKm:"num:1:3500",
+  cName:"required|name",cPhone:"required|phone",cPickup:"required|min:3|max:160",cTime:"required",cNotes:"max:300",
+  tkName:"required|name",tkPhone:"required|phone",tkMsg:"required|min:10|max:1000",
+  lgId:"required|login",lgPw:"required",suName:"required|name",suPhone:"required|phone",suEmail:"required|email",suPw:"required|min:8|max:100",
+  ckId:"required|login",ckPw:"required",ckName:"required|name",ckPhone:"required|phone",ckEmail:"required|email",ckPw2:"required|min:8|max:100",
+  tkId:"required|login",tkPw:"required",tsuName:"required|name",tsuPhone:"required|phone",tkEmail:"required|email",tkPw2:"required|min:8|max:100",
+  pfName:"required|name",pfPhone:"required|phone",pfAlt:"phone",pfCity:"max:60",pwCur:"required",pwNew:"required|min:8|differs:pwCur",
+  fFrom:"required|min:2",fTo:"required|min:2|differs:fFrom",fDate:"required|today",fRet:"after:fDate",fAd:"required|int:1:9",fCh:"int:0:8",fIn:"int:0:4|notmore:fAd",
+  hCity:"required|place",hIn:"required|today",hOut:"required|after:hIn",hRooms:"required|int:1:8",hAd:"required|int:1:16",
+  tgFirst:"required|name",tgLast:"required|name",tgEmail:"required|email",tgPhone:"required|e164",
+  ntEmail:"email",ntPhone:"phone",teamPhone:"phone",galCap:"max:120"
+};
+const VRULES_PLAN={origin:"place",destination:"place|differs:origin",startDate:"today",nights:"int:0:30",adults:"int:1:20",children:"int:0:10",budget:"num:500:10000000",interests:"max:200"};
+const VRULES_PAX={title:"required",given_name:"required|name",family_name:"required|name",gender:"required",born_on:"required|past",email:"required|email",phone_number:"required|e164"};
+const VRULES_BIZ={name:"required|min:2",phone:"required|anyphone",whatsapp:"phone",email:"email",upiId:"upi",advancePercent:"num:0:100",gstPercent:"num:0:28",nightCharge:"num:0:100000",cancelCutoffHours:"int:0:168",maxOpenRequests:"int:1:10",musicUrl:"music"};
+function rulesOf(el){
+  if(el.id&&VRULES[el.id])return VRULES[el.id];
+  if(el.name&&el.closest("#planForm")&&VRULES_PLAN[el.name])return VRULES_PLAN[el.name];
+  if(el.dataset.px!=null&&VRULES_PAX[el.dataset.k]){/* extra passengers reuse the lead passenger's email and phone when left blank */
+    if(el.dataset.px!=="0"&&el.dataset.k==="email")return"email";if(el.dataset.px!=="0"&&el.dataset.k==="phone_number")return"e164";return VRULES_PAX[el.dataset.k]}
+  if(el.dataset.bf&&VRULES_BIZ[el.dataset.bf])return VRULES_BIZ[el.dataset.bf];
+  if(el.dataset.soc)return"https";
+  if(el.dataset.pref==="hotelStars")return"int:0:5";
+  if(el.dataset.fx)return"num:0:100000";
+  if(el.dataset.vf==="name")return"required|min:2";if(["seats","ratePerKm"].includes(el.dataset.vf))return"required|num:1:100000";if(el.dataset.vf==="count")return"required|int:0:1000";
+  if(el.required)return"required";if(el.type==="email")return"email";
+  return"";
+}
+const fieldLabel=el=>{const l=el.closest("label");const s=l?.querySelector("span")?.childNodes[0]?.textContent||l?.querySelector("span")?.textContent||el.getAttribute("aria-label")||el.placeholder||"This field";return s.replace(/\s+/g," ").trim().replace(/[:*]$/,"")};
+const sib=(el,id)=>{const r=el.closest("form,#stepBody,#tckBody,#ownerBody,fieldset,body");return r.querySelector("#"+id)||r.querySelector(`[name="${id}"]`)||document.getElementById(id)};
+function checkField(el){
+  const rules=rulesOf(el);if(!rules||el.disabled||el.type==="hidden")return"";
+  const v=String(el.value||"").trim(),L=fieldLabel(el);
+  for(const r of rules.split("|")){const [k,a,b]=r.split(":");
+    if(k==="required"){if(!v)return el.tagName==="SELECT"?`Choose ${L.toLowerCase()}.`:`${L} is required.`;continue}
+    if(!v)continue;
+    if(k==="name"&&!V_RE.name.test(v))return"Use letters only (at least 2), as on your ID.";
+    if(k==="place"&&!V_RE.place.test(v))return"Enter a city or place name.";
+    if(k==="phone"&&!V_RE.phone.test(v)&&!V_RE.e164.test(v.replace(/[\s-]/g,"")))return"Enter a 10-digit mobile number, e.g. 98765 43210.";
+    if(k==="anyphone"&&!/^\+?\d[\d\s-]{8,15}$/.test(v))return"Enter a phone number with area code, e.g. 044 2345 6789 or 98765 43210.";
+    if(k==="e164"&&!V_RE.e164.test(v.replace(/[\s-]/g,"")))return"Include the country code, e.g. +919876543210.";
+    if(k==="email"&&!V_RE.email.test(v))return"Enter a valid email, e.g. name@gmail.com.";
+    if(k==="login"&&!V_RE.email.test(v)&&!V_RE.phone.test(v))return"Enter your email or 10-digit mobile number.";
+    if(k==="upi"&&!V_RE.upi.test(v))return"A UPI ID looks like name@bank.";
+    if(k==="https"&&!safeHttps(v))return"Paste the full link, starting with https://";
+    if(k==="music"&&!validMusic(v))return"Use an https link (or /path) to an .mp3, .m4a, .ogg or .wav file.";
+    if(k==="min"&&v.length<+a)return`Enter at least ${a} characters.`;
+    if(k==="max"&&v.length>+a)return`Keep it under ${a} characters.`;
+    if(k==="int"||k==="num"){const n=Number(v);if(!Number.isFinite(n)||(k==="int"&&!Number.isInteger(n)))return`Enter a ${k==="int"?"whole ":""}number.`;if(n<+a||n>+b)return`Enter a number from ${(+a).toLocaleString("en-IN")} to ${(+b).toLocaleString("en-IN")}.`}
+    if(k==="today"&&v<todayISO())return"Choose today or a later date.";
+    if(k==="past"&&v>=todayISO())return"Date of birth must be in the past.";
+    if(k==="after"){const o=sib(el,a);if(o?.value&&v<=o.value)return`Must be after ${fieldLabel(o).toLowerCase()}.`}
+    if(k==="differs"){const o=sib(el,a);if(o?.value&&o.value.trim().toLowerCase()===v.toLowerCase())return`Can't be the same as ${fieldLabel(o).toLowerCase()}.`}
+    if(k==="notmore"){const o=sib(el,a);if(o&&Number(v)>Number(o.value||0))return"Each infant needs an adult on the lap: no more infants than adults."}
+  }
+  return"";
+}
+function showErr(el,msg){
+  const host=el.closest("label.f,.f,label")||el.parentElement;let e=host.querySelector(":scope > .ferr");
+  if(!msg){el.removeAttribute("aria-invalid");host.classList.remove("invalid");e?.remove();return}
+  if(!e){e=document.createElement("span");e.className="ferr";e.id="ferr-"+Math.random().toString(36).slice(2,8);e.setAttribute("role","alert");host.append(e)}
+  e.textContent=msg;el.setAttribute("aria-invalid","true");el.setAttribute("aria-describedby",e.id);host.classList.add("invalid");
+}
+/* Validate every visible field in a container; focus the first problem. */
+function validateIn(root){
+  if(!root)return true;let first=null,n=0;
+  root.querySelectorAll("input,select,textarea").forEach(el=>{if(!el.offsetParent&&el.type!=="hidden")return;const m=checkField(el);showErr(el,m);if(m){n++;first=first||el}});
+  if(first){first.focus({preventScroll:true});first.scrollIntoView({behavior:"smooth",block:"center"});toast(n>1?`Please fix the ${n} highlighted fields.`:"Please fix the highlighted field.",true)}
+  return!first;
+}
+/* Live feedback: check a field when the visitor leaves it; clear the message as soon as it's fixed. */
+document.addEventListener("focusout",e=>{const el=e.target;if(!el.matches?.("input,select,textarea"))return;if(!el.value&&!el.getAttribute("aria-invalid"))return;showErr(el,checkField(el))},true);
+document.addEventListener("input",e=>{const el=e.target;if(el.getAttribute?.("aria-invalid")==="true"&&!checkField(el))showErr(el,"")},true);
+/* Our messages replace the browser's own bubbles. */
+new MutationObserver(()=>document.querySelectorAll("form:not([novalidate])").forEach(f=>f.noValidate=true)).observe(document.body,{childList:true,subtree:true});
+document.querySelectorAll("form").forEach(f=>f.noValidate=true);
+const NOVALIDATE_FORMS=["composer"];
+document.addEventListener("submit",e=>{const f=e.target;if(NOVALIDATE_FORMS.includes(f.id))return;if(!validateIn(f)){e.preventDefault();e.stopImmediatePropagation()}},true);
+/* Buttons that move to the next step validate their step first. */
+const GATES=[["#w1Next","#stepBody"],["#w3Next","#stepBody"],["[data-thold]","#tckBody"],['[data-osave="business"]',"#ownerBody"],['[data-osave="fleet"]',"#ownerBody"],["[data-mapkm]","#stepBody"]];
+document.addEventListener("click",e=>{for(const [sel,box] of GATES){const b=e.target.closest?.(sel);if(!b)continue;
+  let root=$(box);if(sel==="[data-mapkm]"){const ok=[$("#wFrom"),$("#wTo")].every(el=>{const m=checkField(el);showErr(el,m);return!m});if(!ok){e.preventDefault();e.stopImmediatePropagation()}return}
+  if(!validateIn(root)){e.preventDefault();e.stopImmediatePropagation()}return}},true);
+
+/* ================= v3.0: quick contact — WhatsApp, Gmail, Instagram, Call ================= */
+const BRAND={};/* Official icons the owner may place in public/brand/ (whatsapp.svg, gmail.svg, instagram.svg …) replace ours. */
+if(window.claude?.auth)["whatsapp","gmail","instagram","phone","facebook","youtube","linkedin","x"].forEach(k=>{const i=new Image();i.onload=()=>{BRAND[k]=true;renderSocial();renderContactQuick()};i.src=`/brand/${k}.svg`});
+const QC_ICON={whatsapp:'<path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2z"/>',
+  gmail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/>',
+  instagram:'<rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r=".8"/>',
+  phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>'};
+const qcIcon=(k,sz=20)=>BRAND[k]?`<img src="/brand/${k}.svg" alt="" width="${sz}" height="${sz}">`:`<svg viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${QC_ICON[k]}</svg>`;
+/* tel: link for Indian mobiles and landlines (044 …) or any +country number */
+function telHref(p){const raw=String(p||"").trim(),d=raw.replace(/\D/g,"");if(d.length<8)return"";if(raw.startsWith("+"))return"tel:+"+d;if(d.length===10)return"tel:+91"+d;if(d.length===11&&d.startsWith("0"))return"tel:+91"+d.slice(1);if(d.length===12&&d.startsWith("91"))return"tel:+"+d;return"tel:"+d}
+const igUser=()=>{const m=/instagram\.com\/([A-Za-z0-9._]{1,30})/i.exec((cfg().social||{}).instagram||"");return m&&!["p","reel","stories"].includes(m[1])?m[1]:""};
+function channelLinks(text,subject){
+  const c=cfg(),out=[],t=String(text||`Hi ${c.name||""}, I'd like to book a trip.`);
+  const wd=String(c.whatsapp||c.phone||"").replace(/\D/g,""),wn=wd.length===10?"91"+wd:wd.length>=11&&wd.length<=15?wd:"";
+  if(wn)out.push({k:"whatsapp",l:"WhatsApp",href:`https://wa.me/${wn}?text=${encodeURIComponent(t)}`});
+  if(V_RE.email.test(c.email||""))out.push({k:"gmail",l:"Gmail",href:`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(c.email)}&su=${encodeURIComponent(subject||"Trip enquiry")}&body=${encodeURIComponent(t)}`,alt:`mailto:${c.email}?subject=${encodeURIComponent(subject||"Trip enquiry")}&body=${encodeURIComponent(t)}`});
+  const ig=igUser();if(ig)out.push({k:"instagram",l:"Instagram",href:`https://ig.me/m/${ig}`,copy:true});else if(safeHttps((c.social||{}).instagram))out.push({k:"instagram",l:"Instagram",href:safeHttps(c.social.instagram),copy:true});
+  const th=telHref(c.phone);if(th)out.push({k:"phone",l:"Call",href:th});
+  if(isSample()&&!out.length)return[{k:"whatsapp",l:"WhatsApp",href:"#contact",sample:true},{k:"gmail",l:"Gmail",href:"#contact",sample:true},{k:"instagram",l:"Instagram",href:"#contact",sample:true},{k:"phone",l:"Call",href:"#contact",sample:true}];
+  return out;
+}
+function renderContactQuick(){
+  const Q=$("#quickContact");if(Q){const ch=channelLinks();Q.innerHTML=ch.length?`<div class="eyebrow" style="margin-bottom:8px">Ask us instantly</div><div class="qc-row">${ch.map(x=>`<a class="qc qc-${x.k}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} data-qc="${x.k}">${qcIcon(x.k,22)}<span>${esc(x.l)}</span></a>`).join("")}</div>${ch.some(x=>x.sample)?'<p class="small muted" style="margin-top:8px">Sample buttons. They work once the owner adds the WhatsApp number, email and Instagram link in Business setup.</p>':""}`:"";Q.hidden=!ch.length}
+  const V=$("#viaRow");if(V){const ch=channelLinks().filter(x=>x.k!=="phone"&&!x.sample);V.hidden=!ch.length;V.innerHTML=ch.length?`<span class="small muted">or send this query by</span>${ch.map(x=>`<button type="button" class="qc qc-${x.k} sm" data-via="${x.k}">${qcIcon(x.k,18)}<span>${esc(x.l)}</span></button>`).join("")}`:""}
+  const D=$("#dialList");if(D){const ch=channelLinks();D.innerHTML=ch.map(x=>`<a class="dial-i qc-${x.k}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} aria-label="${esc(x.l)}" title="${esc(x.l)}">${qcIcon(x.k,22)}<span>${esc(x.l)}</span></a>`).join("");$("#dialBtn").hidden=!ch.length}
+}
+async function sendVia(kind){
+  const f=$("#ticketForm");if(!validateIn(f))return;
+  const name=$("#tkName").value.trim(),phone=$("#tkPhone").value.trim(),msg=$("#tkMsg").value.trim();
+  const text=`Hi ${cfg().name||""}, I'm ${name} (${phone}).\n\n${msg}`;
+  const ch=channelLinks(text,`Query from ${name}`).find(x=>x.k===kind);if(!ch)return;
+  if(ch.copy){try{await navigator.clipboard.writeText(text);toast("Your message is copied. Paste it in the Instagram chat that opens.")}catch{toast("Instagram can't pre-fill messages. Type your query in the chat that opens.")}}
+  window.open(ch.href,"_blank","noopener");
+  sendTicket({name,phone,message:`[via ${ch.l}] ${msg}`,via:kind}).catch(()=>{});
+}
+
+const closeDial=()=>{const D=$("#dial");if(D?.classList.contains("open")){D.classList.remove("open");$("#dialBtn")?.setAttribute("aria-expanded","false")}};
+document.addEventListener("pointerdown",e=>{if(!e.target.closest?.("#dial"))closeDial()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDial()});
+/* ================= v3.0: 3D — card tilt that follows the pointer (desktop, motion allowed) ================= */
+const TILT_SEL=".tilt3d,.hstep,.kpi,.hcard,.fcard,.panel.trip,.panel.bk,.soc-big,.qc,.wx-day,.panel.budget,.panel.plan,.tsum,#contactInfo";
+const canTilt=()=>matchMedia("(hover:hover) and (pointer:fine)").matches&&!matchMedia("(prefers-reduced-motion: reduce)").matches;
+let tiltEl=null;
+document.addEventListener("pointermove",e=>{
+  if(!canTilt())return;const el=e.target.closest?.(TILT_SEL);
+  if(tiltEl&&tiltEl!==el){tiltEl.style.transform="";tiltEl.style.removeProperty("--gx");tiltEl.classList.remove("tilting");tiltEl=null}
+  if(!el||el.closest(".flip,.ring,form:focus-within"))return;
+  const r=el.getBoundingClientRect(),x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5,max=r.width>420?4:8;
+  el.style.transform=`perspective(900px) rotateX(${(-y*max).toFixed(2)}deg) rotateY(${(x*max).toFixed(2)}deg) translateZ(0) translateY(-3px)`;
+  el.style.setProperty("--gx",`${(x+.5)*100}%`);el.style.setProperty("--gy",`${(y+.5)*100}%`);el.classList.add("tilting");tiltEl=el;
+},{passive:true});
+document.addEventListener("pointerleave",()=>{if(tiltEl){tiltEl.style.transform="";tiltEl.classList.remove("tilting");tiltEl=null}});
+
+/* ================= v3.0: footer ================= */
+function renderFooter(){
+  const F=$("#footReach");if(F){const c=cfg();F.innerHTML=`${c.phone&&telHref(c.phone)?`<a href="${esc(telHref(c.phone))}">${qcIcon("phone",16)}<span>${esc(c.phone)}</span></a>`:""}${c.email?`<a href="mailto:${esc(c.email)}">${qcIcon("gmail",16)}<span>${esc(c.email)}</span></a>`:""}${c.address?`<span class="fr-addr">${esc(c.address)}</span>`:""}${c.hours?`<span class="fr-addr">${esc(c.hours)}</span>`:""}${!c.phone&&!c.email?'<span class="fr-addr">Contact details appear here once the owner adds them.</span>':""}`}
+  const T=$("#footTravel");if(T)T.hidden=!tAvail();
+}
+
+/* ================= v3.1: password security & two-step verification ================= */
+/* Same rules as the server (server/security.js), so people see problems while typing. */
+const PW_COMMON=/^(123456|password|qwerty|iloveyou|admin|welcome|letmein|india|chennai|abc123|111111|000000)/i;
+function pwProblems(pw,who={}){
+  pw=String(pw||"");const out=[],low=pw.toLowerCase();
+  if(pw.length<10)out.push("At least 10 characters");
+  const cls=[/[a-z]/,/[A-Z]/,/\d/,/[^A-Za-z0-9]/].filter(r=>r.test(pw)).length;
+  if(pw.length<16&&cls<3)out.push("3 of: a–z, A–Z, 0–9, symbol (or 16+ characters)");
+  if(PW_COMMON.test(low)||/pass(word)?|qwerty|letmein|welcome|admin/.test(low))out.push("Not a common password");
+  if(/(.)\1{3,}/.test(pw))out.push("No 4 repeated characters");
+  const seq="0123456789abcdefghijklmnopqrstuvwxyz qwertyuiop asdfghjkl zxcvbnm";if([...Array(seq.length-4).keys()].some(i=>{const s=seq.slice(i,i+5);return!s.includes(" ")&&(low.includes(s)||low.includes([...s].reverse().join("")))}))out.push("No sequences like 12345 or abcde");
+  const parts=[...String(who.name||"").toLowerCase().split(/[^a-z]+/),String(who.email||"").toLowerCase().split("@")[0]].filter(t=>t&&t.length>=4);
+  if(parts.some(t=>low.includes(t)))out.push("Doesn't contain your name or email");
+  const ph=String(who.phone||"").replace(/\D/g,"").slice(-10);if(ph.length===10&&(pw.includes(ph)||pw.includes(ph.slice(-6))))out.push("Doesn't contain your mobile number");
+  return out;
+}
+const NEWPW={suPw:{name:"#suName",email:"#suEmail",phone:"#suPhone"},ckPw2:{name:"#ckName",email:"#ckEmail",phone:"#ckPhone"},tkPw2:{name:"#tsuName",email:"#tkEmail",phone:"#tsuPhone"},pwNew:{}};
+const whoFor=id=>{const m=NEWPW[id]||{};const v=s=>s?($(s)?.value||""):"";return{name:v(m.name)||S.me?.name||"",email:v(m.email)||S.me?.email||"",phone:v(m.phone)||S.me?.phone||""}};
+/* Validation hooks into the v3.0 engine */
+Object.keys(NEWPW).forEach(id=>VRULES[id]="required|strongpw");
+VRULES.pw2Confirm="required|same:pwNew";VRULES.mfaCode="required";VRULES.sec2faPw="required";
+const _checkField=checkField;
+checkField=function(el){
+  const r=rulesOf(el);
+  if(r.includes("strongpw")&&el.value){const p=pwProblems(el.value,whoFor(el.id));if(p.length)return"Password needs: "+p.join(" · ")+"."}
+  if(r.includes("same:")&&el.value){const o=document.getElementById(r.split("same:")[1].split("|")[0]);if(o&&o.value!==el.value)return"Passwords don't match."}
+  return _checkField(el);
+};
+/* Strength meter + checklist under every new-password field */
+function strengthOf(pw,who){const probs=pwProblems(pw,who);let score=Math.min(4,Math.floor(pw.length/4))+[/[a-z]/,/[A-Z]/,/\d/,/[^A-Za-z0-9]/].filter(r=>r.test(pw)).length;score=probs.length?Math.min(score,probs.length>2?1:2):Math.max(3,Math.min(5,score-2));return{score:pw?score:0,probs}}
+function renderMeter(el){
+  const host=el.closest("label")||el.parentElement;let m=host.querySelector(":scope > .pwm");
+  if(!m){m=document.createElement("div");m.className="pwm";m.setAttribute("aria-live","polite");host.append(m)}
+  const {score,probs}=strengthOf(el.value,whoFor(el.id)),lbl=["","Very weak","Weak","Fair","Strong","Very strong"][score]||"";
+  m.innerHTML=el.value?`<div class="pwm-bar s${score}"><i></i><i></i><i></i><i></i><i></i></div><span class="pwm-l">${lbl}</span>${probs.length?`<ul>${probs.map(p=>`<li>${esc(p)}</li>`).join("")}</ul>`:'<span class="pwm-ok">Meets all the rules</span>'}`:`<span class="small muted">10+ characters, mixing letters, numbers and symbols. Avoid names, phone numbers and common words.</span>`;
+}
+let leakTimer=null;
+document.addEventListener("input",e=>{const el=e.target;if(el.id&&NEWPW[el.id]){renderMeter(el);clearTimeout(leakTimer);
+  if(window.claude?.auth?.passwordCheck&&!pwProblems(el.value,whoFor(el.id)).length)leakTimer=setTimeout(async()=>{try{const r=await window.claude.auth.passwordCheck(el.value,whoFor(el.id));if(!r.ok)showErr(el,r.problems[0])}catch{}},700)}},true);
+document.addEventListener("focusin",e=>{const el=e.target;if(el.id&&NEWPW[el.id]&&!el.closest("label")?.querySelector(".pwm"))renderMeter(el)},true);
+/* Show / hide button on every password field */
+function addPwToggles(root=document){root.querySelectorAll('input[type="password"]:not([data-eye])').forEach(inp=>{inp.dataset.eye="1";const w=document.createElement("span");w.className="pw-wrap";inp.parentNode.insertBefore(w,inp);w.append(inp);
+  const b=document.createElement("button");b.type="button";b.className="pw-eye";b.setAttribute("aria-label","Show password");b.setAttribute("aria-pressed","false");b.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';w.append(b)})}
+new MutationObserver(()=>addPwToggles()).observe(document.body,{childList:true,subtree:true});addPwToggles();
+document.addEventListener("click",e=>{const b=e.target.closest?.(".pw-eye");if(!b)return;e.preventDefault();const i=b.parentElement.querySelector("input");const show=i.type==="password";i.type=show?"text":"password";b.setAttribute("aria-pressed",String(show));b.setAttribute("aria-label",show?"Hide password":"Show password");b.classList.toggle("on",show);i.focus()},true);
+
+/* ---------- Security panel (My account) ---------- */
+const SECU={data:null,setup:null,codes:null,busy:false};
+async function loadSecurity(){if(!window.claude?.auth?.security||S.role==="guest")return;try{SECU.data=await window.claude.auth.security()}catch{SECU.data=null}renderSecurity()}
+const ago=t=>{if(!t)return"";const m=Math.round((Date.now()-t)/60e3);return m<1?"just now":m<60?`${m} min ago`:m<1440?`${Math.round(m/60)} h ago`:new Date(t).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})};
+function renderSecurity(){
+  const B=$("#securityBody");if(!B)return;
+  if(!window.claude?.auth||S.role==="guest"){B.innerHTML="";return}
+  const d=SECU.data||{},on=!!d.twoFactor;
+  const codesBox=SECU.codes?`<div class="rc-box"><b>Your backup codes</b><p class="small">Each code works once if you lose your phone. Save them somewhere safe now: they won't be shown again.</p><div class="rc-grid mono">${SECU.codes.map(c=>`<span>${esc(c)}</span>`).join("")}</div><div class="bk-actions"><button class="btn sm" type="button" data-rcdl="1">Download .txt</button><button class="btn sm" type="button" data-rccopy="1">Copy</button><button class="btn sm primary" type="button" data-rcdone="1">I've saved them</button></div></div>`:"";
+  const setupBox=SECU.setup?`<div class="mfa-setup"><ol class="small"><li>Install an authenticator app (Google Authenticator, Microsoft Authenticator or Authy).</li><li>Scan this QR code in the app, or type the key.</li><li>Enter the 6-digit code the app shows.</li></ol>
+      <div class="mfa-grid"><img src="${esc(SECU.setup.qr)}" alt="QR code for your authenticator app" width="180" height="180"><div><span class="small muted">Setup key</span><div class="mono key" style="user-select:all">${esc(SECU.setup.secret)}</div>
+      <form id="mfaEnable" class="mfa-code"><label class="f"><span>6-digit code</span><input id="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123456"></label><button class="btn primary" type="submit">Turn on</button><button class="btn ghost" type="button" data-mfacancel="1">Cancel</button></form></div></div></div>`:"";
+  B.innerHTML=`<div class="sec-grid">
+    <div class="sec-card"><div class="sec-h"><span class="sec-ic ${on?"ok":"warn"}">${on?"✓":"!"}</span><div><b>Two-step verification</b><div class="small muted">${on?`On · ${d.recoveryLeft} backup code${d.recoveryLeft===1?"":"s"} left`:"Off · your password is the only lock"}</div></div></div>
+      <p class="small">${on?"Signing in needs your password and a code from your phone, so a stolen password alone can't open your account.":"Add a code from your phone when you sign in. Strongly recommended for the owner and staff."}</p>
+      ${codesBox||setupBox||(on?`<form id="mfaManage" class="sec-form"><label class="f"><span>Password</span><input id="sec2faPw" type="password" autocomplete="current-password"></label><label class="f"><span>Code from app (to turn off)</span><input id="sec2faCode" inputmode="numeric" autocomplete="one-time-code" placeholder="123456"></label><div class="bk-actions"><button class="btn sm" type="button" data-mfarc="1">New backup codes</button><button class="btn sm danger" type="button" data-mfaoff="1">Turn off</button></div></form>`
+        :`<form id="mfaStart" class="sec-form"><label class="f"><span>Confirm your password</span><input id="sec2faPw" type="password" autocomplete="current-password"></label><button class="btn primary sm" type="submit">Set up two-step verification</button></form>`)}
+    </div>
+    <div class="sec-card"><div class="sec-h"><span class="sec-ic ${d.mustChange?"bad":"ok"}">${d.mustChange?"!":"✓"}</span><div><b>Password</b><div class="small muted">${d.mustChange?"Temporary password: set your own now":d.pwChangedAt?`Last changed ${ago(d.pwChangedAt)}`:""}</div></div></div>
+      <form id="pwForm" class="sec-form"><label class="f"><span>Current password</span><input id="pwCur" type="password" autocomplete="current-password"></label><label class="f"><span>New password</span><input id="pwNew" type="password" autocomplete="new-password"></label><label class="f"><span>Confirm new password</span><input id="pw2Confirm" type="password" autocomplete="new-password"></label><button class="btn sm primary" type="submit">Change password</button></form>
+      <p class="small muted">Changing it signs you out on every other device.</p></div>
+    <div class="sec-card"><div class="sec-h"><span class="sec-ic ok">${(d.sessions||[]).length}</span><div><b>Signed-in devices</b><div class="small muted">Sessions end after 30 days</div></div></div>
+      <ul class="sec-list">${(d.sessions||[]).map(x=>`<li><span>${esc(x.device)}${x.current?' <span class="chip ok">This device</span>':""}</span><span class="small muted">${esc(x.ip||"")} · ${ago(x.at)}</span></li>`).join("")||'<li class="small muted">No other devices.</li>'}</ul>
+      <div class="bk-actions"><button class="btn sm" type="button" data-revoke="1" ${(d.sessions||[]).length>1?"":"disabled"}>Sign out all other devices</button><button class="btn sm danger" type="button" data-logout="1">Sign out</button></div></div>
+    <div class="sec-card"><div class="sec-h"><span class="sec-ic ok">⏱</span><div><b>Recent sign-in activity</b><div class="small muted">Something you don't recognise? Change your password and sign out other devices.</div></div></div>
+      <ul class="sec-list">${(d.logins||[]).map(l=>`<li><span>${l.ok?"✓":"✕"} ${esc(l.device)} <span class="small muted">· ${esc(l.how)}</span></span><span class="small ${l.ok?"muted":"bad-t"}">${l.ok?"":"Failed · "}${esc(l.ip)} · ${ago(l.at)}</span></li>`).join("")||'<li class="small muted">No activity yet.</li>'}</ul></div>
+  </div>`;
+}
+function renderMustChange(){
+  const must=!!S.me?.mustChange&&window.claude?.auth;let b=$("#mustBanner");
+  if(!must){b?.remove();return}
+  if(!b){b=document.createElement("div");b.id="mustBanner";b.className="must-banner";b.setAttribute("role","alert");$("#top").after(b)}
+  b.innerHTML=`<b>You signed in with a temporary password.</b> Set your own password to continue using your account. <a class="btn sm primary" href="#security">Set password</a>`;
+}
+async function secAction(fn,ok){if(SECU.busy)return;SECU.busy=true;try{const r=await fn();if(ok)toast(ok);return r}catch(err){toast(err.message||"Something went wrong.",true)}finally{SECU.busy=false}}
+function downloadText(name,text){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:"text/plain"}));a.download=name;document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+
+/* ================= events ================= */
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("button,[data-pick],[data-flip],a");if(!t)return;const W=S.wiz,d=t.dataset;
+  if(d.bookveh){e.preventDefault();e.stopPropagation();bookVehicle(d.bookveh);return}
+  if(d.mfacancel){SECU.setup=null;renderSecurity();return}
+  if(d.mfaoff){if(!validateIn($("#mfaManage")))return;const pw=$("#sec2faPw").value,code=$("#sec2faCode").value.trim();if(!code)return showErr($("#sec2faCode"),"Enter a code from your app or a backup code.");const r=await secAction(()=>window.claude.auth.twofa.disable(pw,code),"Two-step verification is off.");if(r)await loadSecurity();return}
+  if(d.mfarc){if(!validateIn($("#mfaManage")))return;const r=await secAction(()=>window.claude.auth.twofa.recovery($("#sec2faPw").value),"New backup codes created. The old ones no longer work.");if(r){SECU.codes=r.recoveryCodes;renderSecurity()}return}
+  if(d.rcdl){downloadText(`${(cfg().name||"site").replace(/\W+/g,"-")}-backup-codes.txt`,`Backup codes for ${S.me?.email||""} (${cfg().name})\nEach code works once.\n\n${SECU.codes.join("\n")}\n`);return}
+  if(d.rccopy){try{await navigator.clipboard.writeText(SECU.codes.join("\n"));toast("Backup codes copied.")}catch{toast("Copy didn't work. Select the codes and copy them.",true)}return}
+  if(d.rcdone){SECU.codes=null;renderSecurity();return}
+  if(d.revoke){const r=await secAction(()=>window.claude.auth.revokeOthers());if(r){toast(`Signed out ${r.signedOut} other device${r.signedOut===1?"":"s"}.`);await loadSecurity()}return}
+  if(d.reset2fa&&S.role==="owner"&&window.claude?.auth){try{const r=await window.claude.auth.resetFor(d.reset2fa,true);t.closest(".contact-row").insertAdjacentHTML("afterend",`<p class="note">Temporary password for ${esc(d.name)}: <b class="mono" style="user-select:all">${esc(r.tempPassword)}</b>. Two-step verification is switched off for them. They must set a new password when they sign in.</p>`)}catch(err){toast(err.message,true)}return}
+  if(t.id==="dialBtn"){const D=$("#dial"),o=!D.classList.contains("open");D.classList.toggle("open",o);t.setAttribute("aria-expanded",String(o));return}
+  if(d.via){await sendVia(d.via);return}
+  if(t.closest("#dialList")){$("#dial").classList.remove("open");$("#dialBtn").setAttribute("aria-expanded","false")}
+  if(t.id==="musicBtn"||d.music){await setMusic(!MUSIC.on);return}
+  if(d.here){t.disabled=true;const old=t.innerHTML;if(t.classList.contains("locbtn"))t.innerHTML=`${PIN}<span>Finding…</span>`;
+    try{readStep1?.();if(t.closest("#fForm"))readFlightForm();if(t.closest("#planForm"))await savePlan(Object.fromEntries(new FormData($("#planForm"))));await detectLocation({force:d.here==="force"})}catch(err){toast(err.message||"Couldn't get your location.",true)}finally{t.disabled=false;if(t.isConnected)t.innerHTML=old}return}
+  if(d.mapkm){t.disabled=true;readStep1();await fillMapKm();t.disabled=false;return}
+  if(d.track){const b=myBookings().find(x=>x.id===d.track);if(b)await startTrack(b,d.toward);return}
+  if(d.trackstop){stopTrack();toast("Tracking stopped.");return}
+  if(t.id==="bellBtn"){const P=$("#bellPanel"),open=P.hidden;P.hidden=!open;t.setAttribute("aria-expanded",String(open));if(open){renderBell();LS.set("st.nseen."+S.uid,Date.now());$("#bellCount").hidden=true}return}
+  if(d.bellclose){$("#bellPanel").hidden=true;$("#bellBtn")?.setAttribute("aria-expanded","false");renderBell();return}
+  if(d.prefclear){try{await savePrefs(Object.fromEntries(PREF_FIELDS.map(([k])=>[k,""])));toast("Preferences deleted.")}catch(err){toast(err.message||"Couldn't delete.",true)}return}
+  if(d.planclear){try{await savePlan({...structuredClone(PLAN0)});renderPlanner();toast("Plan cleared.")}catch(err){toast(err.message,true)}return}
+  if(d.itinadd){const p=myPlan();readItin(p);p.itinerary.push({date:p.startDate?addDays(p.startDate,p.itinerary.length):"",plan:""});await savePlan({itinerary:p.itinerary});renderPlanner();return}
+  if(d.itindel!=null){const p=myPlan();readItin(p);p.itinerary.splice(+d.itindel,1);await savePlan({itinerary:p.itinerary});renderPlanner();return}
+  if(d.itinsave){const p=myPlan();readItin(p);try{await savePlan({itinerary:p.itinerary});toast("Day plan saved.")}catch(err){toast(err.message,true)}return}
+  if(d.planask){const p=myPlan(),miss=planMissing(p);$("#agent")?.scrollIntoView({behavior:"smooth"});
+    ask(miss.length?`Help me plan my trip${p.destination?" to "+p.destination:""}. Please ask me for the missing details.`:`Plan my trip to ${p.destination}: check the budget, compare options and draft a day-by-day plan.`);return}
+  if(d.planfind){const p=myPlan();
+    if(d.planfind==="cab"){if(!p.origin||!p.destination)return toast("Add the starting city and destination first.",true);const T=S.wiz.trip;if(p.startDate)T.date=p.startDate;T.days=Math.max(1,(Number(p.nights)||0)+1);T.pax=Math.max(1,(Number(p.adults)||0)+(Number(p.children)||0));bookRoute(p.origin,p.destination);return}
+    if(!p.destination||!p.startDate)return toast("Add the destination and start date first.",true);
+    const back=addDays(p.startDate,Math.max(1,Number(p.nights)||1));
+    if(d.planfind==="flight"){if(!p.origin)return toast("Add the starting city first.",true);Object.assign(TR.f,{from:p.origin,to:p.destination,date:p.startDate,ret:Number(p.nights)>0?back:"",trip:Number(p.nights)>0?"round":"oneway",adults:Math.max(1,Number(p.adults)||1),children:Number(p.children)||0,infants:0,cabin:myPrefs().cabin||TR.f.cabin||"economy"});TR.tab="flight";renderTravel();location.hash="travel";await tSearchFlights()}
+    else{Object.assign(TR.h,{city:p.destination,checkin:p.startDate,checkout:back,rooms:1,adults:Math.max(1,Number(p.adults)||2)});TR.tab="hotel";renderTravel();location.hash="travel";await tSearchHotels()}
+    return}
+  if(d.tretry){const [u,id]=d.tretry.split("|");t.disabled=true;try{const r=await window.claude.travel.retryRefund(u,id);TR.attnAt=0;toast(`Refunded ₹${r.refunded}.`);renderOwner()}catch(err){toast(err.message||"Refund failed. Check Razorpay.",true);t.disabled=false}return}
+  if(d.talt){const b=TR.doc.bookings[d.talt];if(!b)return;t.disabled=true;try{await findAlternatives(b);toast("Fresh live options are shown. Select one to approve the new price.")}catch(err){toast(err.message||"Couldn't search.",true)}finally{t.disabled=false}return}
+  if(d.wstep){e.preventDefault();goStep(+d.wstep);return}
+  if(d.gobiz){e.preventDefault();S.ownerTab="business";draft=null;const ob=$("#ownerBody");if(ob)ob.dataset.tab="";location.hash="owner";setTimeout(()=>{renderOwner();$("#owner")?.scrollIntoView({behavior:"smooth"})},60);return}
+  if(d.ttab){TR.tab=d.ttab;TR.err="";LS.set("st.ttab",TR.tab);renderTravel();return}
+  if(d.ftrip){readFlightForm();TR.f.trip=d.ftrip;renderTravel();return}
+  if(d.hopen){TR.openHotel=TR.openHotel===d.hopen?null:d.hopen;renderTravelResults();return}
+  if(d.tsel){const o=findOffer(d.tsel);if(!o)return toast("That option has expired. Please search again.",true);TR.sel=o;LS.set("st.tsel",o);goTrip("trip-details");return}
+  if(d.thold){const o=TR.sel;if(!o)return;t.disabled=true;const old=t.textContent;t.textContent="Checking live price…";
+    try{let body={offerId:o.id};
+      if(o.kind==="flight"){body.passengers=o.passengers.map((_,i)=>Object.fromEntries($$(`[data-px="${i}"]`).map(el=>[el.dataset.k,el.value.trim()])));
+        const lead=body.passengers[0]||{};body.passengers.forEach(x=>{if(!x.email)x.email=lead.email;if(!x.phone_number)x.phone_number=lead.phone_number;x.phone_number=String(x.phone_number||"").replace(/[\s-]/g,"")})}
+      else body.holder={firstName:$("#tgFirst").value.trim(),lastName:$("#tgLast").value.trim(),email:$("#tgEmail").value.trim(),phone:$("#tgPhone").value.replace(/\s/g,"")};
+      const b=await window.claude.travel.hold(body);TR.bid=b.id;LS.set("st.tbid",b.id);TR.doc.bookings[b.id]=b;goTrip("trip-pay")}
+    catch(err){toast(err.message||"Couldn't check the price.",true);if(/expired|search again/i.test(err.message||"")){TR.sel=null;LS.set("st.tsel",null)}}
+    finally{t.disabled=false;t.textContent=old}return}
+  if(d.tpay){const b=TR.doc.bookings[d.tpay];if(!b)return;
+    if(b.priceChanged&&!$("#tAcceptNew")?.checked)return toast("Tick that you accept the new price first.",true);
+    if(!$("#tApprove")?.checked)return toast("Tick the approval box to confirm you want to book this.",true);
+    t.disabled=true;const old=t.textContent;t.textContent="Opening secure payment…";
+    try{await window.claude.travel.pay(d.tpay);goTrip("trip-confirmed")}
+    catch(err){toast(err.message||"Payment didn't go through. You have not been charged.",!err.cancelled)}
+    finally{t.disabled=false;t.textContent=old}return}
+  if(d.tgopay){TR.bid=d.tgopay;LS.set("st.tbid",d.tgopay);goTrip("trip-pay");return}
+  if(d.tcancelhold){try{await window.claude.travel.cancelQuote(d.tcancelhold);toast("Hold cancelled. You weren't charged.");if(routeHash() in TROUTE){location.hash="travel"}}catch(err){toast(err.message,true)}return}
+  if(d.tcancelq){t.disabled=true;try{TR.quote[d.tcancelq]=await window.claude.travel.cancelQuote(d.tcancelq);renderTravelTrips()}catch(err){toast(err.message||"Couldn't get a cancellation quote.",true);t.disabled=false}return}
+  if(d.tcancelyes){t.disabled=true;try{const r=await window.claude.travel.cancelConfirm(d.tcancelyes);delete TR.quote[d.tcancelyes];toast(r.refunded?`Cancelled. ₹${r.refunded} will be refunded in 5–7 working days.`:"Cancelled. No refund is due under the fare rules.")}catch(err){toast(err.message||"Cancellation failed.",true);t.disabled=false}return}
+  if(d.bookroute!=null){const r=cfg().routes[+d.bookroute];if(r)bookRoute(r.from,r.to);return}
+  if(d.openpay){S.wiz.last=d.openpay;goStep(5);return}
+  if(d.w2go){$("#w2Next")?.click();return}
+  if(t.closest("#steps")&&t.tagName==="A"){if(S.wiz.step===1&&CK.on)readStep1();if(S.wiz.step===3)readStep3();if(!CK.on){e.preventDefault();const n=+t.closest("li").dataset.s;readStep1();goStep(n);if(allowedStep(n)<n)toast(`Finish step ${allowedStep(n)} first.`)}return}
+  if(d.newtrip){W.last=null;W.veh=null;W.agree=false;CK.stay=false;clearInterval(CK.timer);CK.timer=null;CK.left=10;goStep(1);return}
+  if(d.stayhere){CK.stay=true;clearInterval(CK.timer);CK.timer=null;$("#ckRedir")?.remove();return}
+  if(d.gosignin){LS.set("st.resume",1);$("#account").scrollIntoView({behavior:"smooth"});setTimeout(()=>$("#lgId")?.focus(),500);toast("Sign in or create an account. Your trip is saved and you'll come back to it.");return}
+  if(d.flipbtn){t.closest(".flip")?.classList.toggle("flipped");return}
+  if(d.flip!=null){t.classList.toggle("flipped");return}
+  if(d.car!=null){const i=+d.car;if(i===carActive()){const p=CAR.list[i];bookRoute(p.from,p.name)}else carGo(i);return}
+  if(d.cdot!=null){carGo(+d.cdot);return}
+  if(t.id==="carPrev"){CAR.idx--;updateRing();return}
+  if(t.id==="carNext"){CAR.idx++;updateRing();return}
+  if(d.tt){readStep1();W.trip.type=d.tt;renderWizard();return}
+  if(t.id==="w1Next"){readStep1();const tr=W.trip;if(!tr.from||!tr.to)return toast("Enter pickup city and destination.",true);if(!tr.date||tr.date<todayISO())return toast("Pick a start date from today onwards.",true);if(!(tr.km>0)&&geoAvail()&&!findRoute(tr.from,tr.to)){t.disabled=true;const ok=await fillMapKm();t.disabled=false;if(!ok)return}
+    if(!(tr.km>0))return toast("Enter the approximate one-way road km.",true);const cur=veh(W.veh);if(!cur||!suitability(cur,tr.pax).fit)W.veh=recommend(tr.pax,tr.days)[0]?.v.id||null;goStep(2);return}
+  if(d.pick){const v=veh(d.pick);if(!suitability(v,W.trip.pax).fit)return toast(`${v.name} seats ${v.seats}. Pick a larger vehicle.`,true);W.veh=v.id;renderWizard();$(".selbar")?.scrollIntoView({behavior:"smooth",block:"nearest"});return}
+  if(t.id==="wBack"){if(W.step===3)readStep3();if(!CK.on)return;goStep(Math.max(1,W.step-1));return}
+  if(t.id==="w2Next"){if(!W.cust.name&&S.req.profile?.name)Object.assign(W.cust,{name:S.req.profile.name,phone:S.req.profile.phone||""});goStep(3);return}
+  if(t.id==="w3Next"){readStep3();const c=W.cust;if(!c.name.trim())return toast("Enter your name.",true);if(!PHONE.test(c.phone.trim()))return toast("Enter a valid mobile number.",true);goStep(4);return}
+  if(t.id==="wSend"){if(!$("#wAgree").checked)return toast("Tick the box to accept the payment and cancellation terms.",true);t.disabled=true;const b=await submitBooking({...W.trip,...W.cust,vehicleId:W.veh,source:"form"});if(b){W.last=b.id;W.agree=false;goStep(5)}else t.disabled=false;return}
+  if(d.r!=null&&t.closest("#routePick")){S.route=+d.r;renderRoutes();return}
+  if(d.askroute!=null){const r=cfg().routes[+d.askroute];$("#agent").scrollIntoView({behavior:"smooth"});ask(`I want to travel from ${r.from} to ${r.to}. What do you need from me?`);return}
+  if(d.copy==="upi")return copy(cfg().upiId,t);
+  if(d.copyrow!=null)return copy(contactRows()[+d.copyrow][1],t);
+  if(d.confirmdraft)return confirmDraft(d.confirmdraft,t);
+  if(d.editdraft){const x=S.drafts[d.editdraft];if(x){Object.assign(W.trip,{from:x.from,to:x.to,date:x.date,days:x.days,pax:x.pax,type:x.type,km:x.km});W.veh=x.vehicleId;Object.assign(W.cust,{name:x.name||W.cust.name,phone:x.phone||W.cust.phone,pickup:x.pickup||W.cust.pickup,time:x.time||W.cust.time});goStep(3)}return}
+  if(d.payonline){if(!window.claude?.payments)return;t.disabled=true;const old=t.innerHTML;t.textContent="Opening secure payment…";
+    try{const r=await window.claude.payments.pay(d.payonline);if(S.wiz.last===d.payonline||CK.on){S.wiz.last=d.payonline;setTimeout(()=>goStep(5),600)}toast(r.status==="confirmed"?"Payment received. Your booking is confirmed!":r.status==="no_vehicle"?"Payment received, but the vehicle was just taken. The owner will call you to rebook or refund.":"Payment received.")}
+    catch(err){toast(err.message||"Payment didn't go through. You have not been charged.",!err.cancelled)}
+    finally{t.disabled=false;t.innerHTML=old}return}
+  if(d.paysend){const box=t.closest(".trip"),utr=box.querySelector("[data-utr]").value.trim(),m=box.querySelector("[data-method]").value,file=box.querySelector("[data-proof]")?.files?.[0];if(!/^[A-Za-z0-9-]{6,40}$/.test(utr))return toast("Enter the UPI / bank transaction reference (UTR) exactly as shown.",true);t.disabled=true;await submitPayment(d.paysend,utr,m,file);t.disabled=false;return}
+  if(d.cancel){t.closest(".trip").querySelector("[data-confirmcancel]").hidden=false;return}
+  if(d.cancelno){t.closest("[data-confirmcancel]").hidden=true;return}
+  if(d.cancelyes)return cancelMine(d.cancelyes);
+  if(d.logout&&window.claude?.auth){window.claude.auth.logout();return}
+  if(t.id==="menuBtn"){const dr=$("#drawer");dr.hidden=!dr.hidden;t.setAttribute("aria-expanded",String(!dr.hidden));return}
+  if(t.closest("#drawer")&&t.tagName==="A"){$("#drawer").hidden=true;$("#menuBtn").setAttribute("aria-expanded","false");return}
+  /* staff */
+  if(!isStaff())return;
+  if(d.otab){if(draft?.dirty&&!confirmLeave())return;S.ownerTab=d.otab;draft=null;$("#ownerBody").dataset.tab="";renderOwner();if(d.otab==="team")teamSearch("");return}
+  if(d.odiscard){draft=null;$("#ownerBody").dataset.tab="";renderOwner();return}
+  if(d.bkf){S.bkFilter=d.bkf;renderOwner();return}
+  if(d.oact&&can("bookings"))return staffAct(d.oact,d.uid,d.id,t);
+  if(d.assign&&can("bookings"))return assignDriver(d.uid,d.assign);
+  if(d.gotrip){S.ownerTab="trips";$("#ownerBody").dataset.tab="";renderOwner();setTimeout(()=>$("#trip-"+CSS.escape(d.gotrip))?.scrollIntoView({behavior:"smooth"}),50);return}
+  if(d.tkind){const box=t.closest("[data-tripbox]");box.querySelectorAll("[data-tkind]").forEach(x=>x.setAttribute("aria-pressed",String(x===t)));const fl=box.querySelector("[data-tfields]");fl.dataset.tfields=d.tkind;fl.innerHTML=tripFields(d.tkind);box.querySelector("[data-tgo]").textContent=({pickup:"Upload pickup photo",start:"Start trip",receipt:"Add receipt",end:"End trip & bill"})[d.tkind];return}
+  if(d.tgo){const box=t.closest("[data-tripbox]");t.disabled=true;await tripAction(box.querySelector("[data-tfields]").dataset.tfields,box.dataset.uid,d.tgo,box);t.disabled=false;return}
+  if(d.refund&&S.role==="owner"&&window.claude?.payments){const inp=$(`[data-refamt="${CSS.escape(d.refund)}"]`);const amt=inp?.value?Number(inp.value):undefined;
+    if(!t.dataset.armed){t.dataset.armed="1";t.textContent=amt?`Confirm refund of ₹${amt}`:"Confirm full refund";setTimeout(()=>{delete t.dataset.armed;t.textContent="Refund via Razorpay"},5000);return}
+    t.disabled=true;try{const r=await window.claude.payments.refund(d.uid,d.refund,amt);toast(`Refunded ₹${r.refunded}. Razorpay ref ${r.refundId}.`)}catch(err){toast(err.message||"Refund failed.",true);t.disabled=false}return}
+  if(d.verify&&can("bookings")){const cur=!!S.customers[d.verify]?.verified;try{await writeDoc("customers/"+d.verify,{verified:!cur,verifiedBy:S.uid,verifiedAt:Date.now()});toast(cur?"Verification removed.":"Customer marked verified.")}catch{toast("Couldn't update.",true)}return}
+  if(d.blockc&&S.role==="owner"){const cur=!!S.customers[d.blockc]?.blocked;try{await writeDoc("customers/"+d.blockc,{blocked:!cur});toast(cur?"Customer unblocked.":"Customer blocked.")}catch{toast("Couldn't update.",true)}return}
+  if(d.vadd){syncDraft();draft.dirty=true;draft.vehicles.push({id:"",name:"New vehicle",type:"sedan",seats:4,ac:true,count:1,ratePerKm:0,minKmPerDay:250,driverBata:0,luggage:""});$("#ownerBody").innerHTML=oFleet();return}
+  if(d.vdel!=null){syncDraft();draft.dirty=true;draft.vehicles.splice(+d.vdel,1);$("#ownerBody").innerHTML=oFleet();return}
+  if(d.radd){syncDraft();draft.dirty=true;draft.routes.push({from:"",to:"",km:0,via:"",stops:""});$("#ownerBody").innerHTML=oRoutes();return}
+  if(d.rdel!=null){syncDraft();draft.dirty=true;draft.routes.splice(+d.rdel,1);$("#ownerBody").innerHTML=oRoutes();return}
+  if(d.osave)return ownerSave(d.osave,t);
+  if(d.oblock){const from=$("#blF").value,to=$("#blT").value;if(!from||!to||to<from)return toast("Pick a valid date range.",true);const id="m"+Date.now().toString(36);const blk={[id]:{vehicleId:$("#blV").value,from,to,reason:$("#blR").value||"Manual block"}};try{const s=await S.db.doc("site/availability").get();if(s.exists)await S.db.doc("site/availability").update({blocks:blk});else await S.db.doc("site/availability").set({blocks:blk});toast("Block added.")}catch{toast("Couldn't add the block.",true)}return}
+  if(d.bldel){const nb={...S.avail.blocks};delete nb[d.bldel];try{await S.db.doc("site/availability").set({blocks:nb});toast("Block removed.")}catch{toast("Couldn't remove.",true)}return}
+  if(d.tres){try{await writeDoc("decisions/"+d.uid,{tickets:{[d.tres]:{resolved:true,by:S.uid,at:Date.now()}}});toast("Marked resolved.")}catch{toast("Couldn't update.",true)}return}
+  if(d.gdel){const items={...S.gallery.items};delete items[d.gdel];try{await S.db.doc("site/gallery").set({items});toast("Photo removed from the gallery.")}catch{toast("Couldn't remove.",true)}return}
+  if(d.addstaff&&S.role==="owner"){const phone=$("#teamPhone").value.trim();if(phone&&!PHONE.test(phone))return toast("Enter a valid phone or leave it empty.",true);const staff={...S.roles.staff,[d.addstaff]:{name:d.name,role:$("#teamRole").value,phone,addedAt:Date.now()}};try{await S.db.doc("site/roles").set({staff});toast(`${d.name} added as ${$("#teamRole").value}. Make sure they have Editor access.`)}catch{toast("Couldn't add. Only the owner can manage the team.",true)}return}
+  if(d.resetpw&&S.role==="owner"&&window.claude?.auth){try{const r=await window.claude.auth.resetFor(d.resetpw);const box=t.closest(".contact-row");box.insertAdjacentHTML("afterend",`<p class="note">Temporary password for ${esc(d.name)}: <b class="mono" style="user-select:all">${esc(r.tempPassword)}</b>. Give it to them privately; they must set a new password when they sign in.</p>`)}catch(err){toast(err.message||"Couldn't reset.",true)}return}
+  if(d.rmstaff&&S.role==="owner"){const staff={...S.roles.staff};delete staff[d.rmstaff];try{await S.db.doc("site/roles").set({staff});toast("Removed from the team. Also remove their Editor access in Share.")}catch{toast("Couldn't remove.",true)}return}
+});
+let leaveArmed=0;function confirmLeave(){if(Date.now()-leaveArmed<4000)return true;leaveArmed=Date.now();toast("You have unsaved changes. Click the tab again within 4 seconds to discard them.");return false}
+document.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&(e.target.dataset?.pick||e.target.dataset?.flip!=null)&&e.target===document.activeElement&&!e.target.matches("button")){e.preventDefault();e.target.click()}
+  if(e.target.closest?.("#stage")&&(e.key==="ArrowRight"||e.key==="ArrowLeft")){e.preventDefault();CAR.idx+=e.key==="ArrowRight"?1:-1;updateRing();$("#ring .rcard.active")?.focus()}});
+let qTimer;
+document.addEventListener("input",e=>{
+  if(e.target.id==="musicVol"){setVolume(Number(e.target.value));return}
+  if(e.target.id==="fFrom"||e.target.id==="fTo")suggestPlaces(e.target);
+  if(draft&&e.target.closest("#ownerBody"))draft.dirty=true;
+  if(e.target.id==="wFrom"||e.target.id==="wTo"){const r=findRoute($("#wFrom").value,$("#wTo").value),k=$("#wKm");if(r){k.value=r.km;k.readOnly=true;$("#kmNote").textContent="Distance from our route table"+(isSample()?" (sample).":".")}else{k.readOnly=false;$("#kmNote").textContent="Route not in our table — enter approximate road km. Final bill uses actual odometer km."}}
+  if(e.target.id==="wAgree")S.wiz.agree=e.target.checked;
+  if(e.target.id==="teamQ"){clearTimeout(qTimer);qTimer=setTimeout(()=>teamSearch(e.target.value.trim()),250)}
+});
+document.addEventListener("change",async e=>{
+  const i=e.target;
+  if(i.dataset.planextra){const v=Math.max(0,Number(i.value)||0);try{await savePlan({extra:{[i.dataset.planextra]:v?String(v):""}});i.blur();renderPlanner()}catch(err){toast(err.message,true)}return}
+  if(i.id==="trackRadius"&&GEO.track){GEO.track.radius=Number(i.value);GEO.track.alarmed=false;LS.set("st.alarmKm",GEO.track.radius);renderTrack();return}
+  if(i.id==="tSort"){TR.sort=i.value;renderTravelResults();return}
+  if(i.id==="tAir"){TR.airline=i.value;renderTravelResults();return}
+  if(i.id==="tNon"){TR.nonstop=i.checked;renderTravelResults();return}
+  if(i.id==="hIn"&&$("#hOut")){$("#hOut").min=addDays(i.value,1);if($("#hOut").value<=i.value)$("#hOut").value=addDays(i.value,2)}
+  if(i.dataset?.vphoto!=null&&can("fleet")){const f=i.files?.[0];if(!f)return;try{toast("Uploading photo…");const id=await uploadPhoto(f);syncDraft();draft.vehicles[+i.dataset.vphoto].photoId=id;draft.dirty=true;$("#ownerBody").innerHTML=oFleet();toast("Photo added. Save fleet to publish it.")}catch(err){toast(err.message||"Upload failed.",true)}}
+  if(i.dataset?.rolechg&&S.role==="owner"){const staff=structuredClone(S.roles.staff);staff[i.dataset.rolechg].role=i.value;try{await S.db.doc("site/roles").set({staff});toast("Role updated.")}catch{toast("Couldn't update.",true)}}
+});
+document.addEventListener("submit",async e=>{
+  if(e.target.id==="notifyTest"){e.preventDefault();const out=$("#ntOut");out.textContent="Sending…";
+    try{const r=await fetch("/api/notify/test",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-SST":"1"},body:JSON.stringify({email:$("#ntEmail").value,phone:$("#ntPhone").value})});const j=await r.json();if(!r.ok)throw new Error(j.error);
+      const parts=Object.entries(j);S.ntOut=out.textContent=parts.length?parts.map(([k,v])=>`${k}: ${v.ok?"sent":"failed ("+(v.err||"")+")"}`).join(" · "):"No channel is configured yet.";S.nstAt=0;setTimeout(renderOwner,800)}
+    catch(err){out.textContent=err.message||"Failed"}return}
+  if(e.target.id==="planForm"){e.preventDefault();const fd=Object.fromEntries(new FormData(e.target));
+    if(fd.startDate&&fd.startDate<todayISO())return toast("Pick a start date from today onwards.",true);
+    if(fd.budget&&!(Number(fd.budget)>0))return toast("Enter the budget in rupees.",true);
+    try{const np=await savePlan(fd);renderPlanner();const m=planMissing(np);toast(m.length?`Saved. Still missing: ${m.join(", ")}.`:"Trip saved. The budget updates as you search and book.")}catch(err){toast(err.message||"Couldn't save.",true)}return}
+  if(e.target.id==="prefsForm"){e.preventDefault();const patch={...Object.fromEntries($$("[data-pref]").map(i=>[i.dataset.pref,i.value])),...Object.fromEntries($$("[data-notif]").map(i=>[i.dataset.notif,i.checked?"on":"off"]))};try{await savePrefs(patch);toast("Preferences saved. You can change or delete them any time.")}catch(err){toast(err.message||"Couldn't save.",true)}return}
+  if(e.target.id==="fForm"){e.preventDefault();readFlightForm();await tSearchFlights();return}
+  if(e.target.id==="hForm"){e.preventDefault();readHotelForm();await tSearchHotels();return}
+  if(e.target.id==="tkLogin"){e.preventDefault();try{await window.claude.auth.login($("#tkId").value.trim(),$("#tkPw").value)}catch(err){toast(err.message||"Couldn't sign in.",true)}return}
+  if(e.target.id==="tkSignup"){e.preventDefault();try{await window.claude.auth.signup({name:$("#tsuName").value.trim(),phone:$("#tsuPhone").value.trim(),email:$("#tkEmail").value.trim(),password:$("#tkPw2").value})}catch(err){toast(err.message||"Couldn't create the account.",true)}return}
+  if(e.target.id==="travelCfg"){e.preventDefault();if(!can("travel"))return;const fx={};$$("[data-fx]").forEach(i=>{const v=Number(i.value);if(v>0)fx[i.dataset.fx]=v});
+    const next={...structuredClone(cfg()),travel:{fx,flightFeePct:Math.min(30,Math.max(0,Number($("#tfFee").value)||0)),hotelFeePct:Math.min(30,Math.max(0,Number($("#thFee").value)||0))},updatedAt:Date.now()};
+    try{await S.db.doc("site/config").set(JSON.parse(JSON.stringify(next)));toast("Pricing saved. New searches use these rates.")}catch(err){toast("Couldn't save pricing.",true)}return}
+  if(e.target.id==="ckLogin"){e.preventDefault();const b=e.target.querySelector("button");b.disabled=true;try{await window.claude.auth.login($("#ckId").value.trim(),$("#ckPw").value)}catch(err){toast(err.message||"Couldn't sign in.",true);b.disabled=false}return}
+  if(e.target.id==="ckSignup"){e.preventDefault();const b=e.target.querySelector("button");b.disabled=true;try{await window.claude.auth.signup({name:$("#ckName").value.trim(),phone:$("#ckPhone").value.trim(),email:$("#ckEmail").value.trim(),password:$("#ckPw2").value})}catch(err){toast(err.message||"Couldn't create the account.",true);b.disabled=false}return}
+  if(e.target.id==="loginForm"){e.preventDefault();const b=e.target.querySelector("button[type=submit]");b.disabled=true;try{await window.claude.auth.login($("#lgId").value.trim(),$("#lgPw").value)}catch(err){toast(err.message||"Couldn't sign in.",true);b.disabled=false}return}
+  if(e.target.id==="signupForm"){e.preventDefault();const b=e.target.querySelector("button[type=submit]");b.disabled=true;try{await window.claude.auth.signup({name:$("#suName").value.trim(),phone:$("#suPhone").value.trim(),email:$("#suEmail").value.trim(),password:$("#suPw").value})}catch(err){toast(err.message||"Couldn't create the account.",true);b.disabled=false}return}
+  if(e.target.id==="pwForm"){e.preventDefault();try{await window.claude.auth.changePassword($("#pwCur").value,$("#pwNew").value);e.target.reset();toast("Password changed. Other devices are signed out.");if(S.me)S.me.mustChange=false;renderMustChange();await loadSecurity()}catch(err){const f=err.message?.includes("Current password")?$("#pwCur"):$("#pwNew");showErr(f,err.message||"Couldn't change the password.")}return}
+  if(e.target.id==="mfaStart"){e.preventDefault();const r=await secAction(()=>window.claude.auth.twofa.setup($("#sec2faPw").value));if(r){SECU.setup=r;renderSecurity();setTimeout(()=>$("#mfaCode")?.focus(),50)}else showErr($("#sec2faPw"),"Check your password.");return}
+  if(e.target.id==="mfaEnable"){e.preventDefault();const r=await secAction(()=>window.claude.auth.twofa.enable($("#mfaCode").value.replace(/\s/g,"")),"Two-step verification is on.");if(r){SECU.setup=null;SECU.codes=r.recoveryCodes;await loadSecurity()}else showErr($("#mfaCode"),"That code doesn't match. Use the current code from the app.");return}
+  if(e.target.id==="profileForm"){e.preventDefault();try{await saveProfile({name:$("#pfName").value,phone:$("#pfPhone").value,altPhone:$("#pfAlt").value,city:$("#pfCity").value,lang:$("#pfLang").value});LS.set("st.lang",$("#pfLang").value);$("#langSel").value=$("#pfLang").value;toast("Profile saved.")}catch(err){toast(err.message,true)}}
+  if(e.target.id==="galForm"){e.preventDefault();const f=$("#galFile").files?.[0];if(!f)return toast("Choose a photo.",true);const btn=e.target.querySelector("button[type=submit]");btn.disabled=true;
+    try{toast("Uploading photo…");const id=await uploadPhoto(f);const k="g"+Date.now().toString(36);const items={...S.gallery.items,[k]:{id,place:$("#galPlace").value.trim(),caption:$("#galCap").value.trim(),at:Date.now(),by:S.uid}};
+      const keep=Object.entries(items).sort((a,b)=>b[1].at-a[1].at).slice(0,60);await S.db.doc("site/gallery").set({items:Object.fromEntries(keep)});e.target.reset();toast("Published to the Live gallery.")}
+    catch(err){toast(err.message||"Upload failed.",true)}finally{btn.disabled=false}}
+  if(e.target.id==="ticketForm"){e.preventDefault();if(!PHONE.test($("#tkPhone").value.trim()))return toast("Enter a valid phone number.",true);const r=await sendTicket({name:$("#tkName").value.trim(),phone:$("#tkPhone").value.trim(),message:$("#tkMsg").value.trim(),via:"form"});if(r.ok){$("#tkMsg").value="";toast("Message sent to the owner.")}else toast(S.role==="guest"?"Sign in to send a message, or call the owner using the numbers shown.":"Couldn't send from here. Please call or WhatsApp the owner.",true)}
+});
+
+/* ================= hero canvas ================= */
+(function sky(){
+  const cv=$("#sky"),cx=cv.getContext("2d"),reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;let W,H,t=0,mx=0,run=true,palms=[],stars=[];
+  function size(){const dpr=Math.min(2,devicePixelRatio||1);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;cx.setTransform(dpr,0,0,dpr,0,0);stars=Array.from({length:70},()=>({x:Math.random()*W,y:Math.random()*H*.45,r:Math.random()*1.3+.2,p:Math.random()*6}));palms=Array.from({length:8},(_,i)=>({z:i/8,side:i%2?1:-1}))}
+  function palm(x,y,s){cx.save();cx.translate(x,y);cx.scale(s,s);cx.strokeStyle="rgba(10,12,24,.9)";cx.lineWidth=5;cx.beginPath();cx.moveTo(0,0);cx.quadraticCurveTo(8,-60,2,-120);cx.stroke();for(let k=0;k<7;k++){const a=-Math.PI/2+(k-3)*.45;cx.beginPath();cx.moveTo(2,-120);cx.quadraticCurveTo(2+Math.cos(a)*40,-120+Math.sin(a)*30-10,2+Math.cos(a)*70,-120+Math.sin(a)*20+25);cx.lineWidth=4;cx.stroke()}cx.restore()}
+  function gop(x,base,w,h){cx.beginPath();const n=6;cx.moveTo(x-w/2,base);for(let i=0;i<n;i++){const ww=w/2*(1-i/n*.7),yy=base-h*(i/n);cx.lineTo(x-ww,yy);cx.lineTo(x-ww*.92,yy-h/n)}cx.lineTo(x,base-h-8);for(let i=n-1;i>=0;i--){const ww=w/2*(1-i/n*.7),yy=base-h*(i/n);cx.lineTo(x+ww*.92,yy-h/n);cx.lineTo(x+ww,yy)}cx.closePath();cx.fill()}
+  function frame(){t+=1;const hz=H*.62,vx=W*.68+mx*20;cx.clearRect(0,0,W,H);
+    stars.forEach(s=>{cx.globalAlpha=.35+.35*Math.sin(t*.02+s.p);cx.fillStyle="#FFF6E6";cx.beginPath();cx.arc(s.x,s.y,s.r,0,7);cx.fill()});cx.globalAlpha=1;
+    const sg=cx.createRadialGradient(vx,hz-30,4,vx,hz-30,140);sg.addColorStop(0,"rgba(255,214,140,.95)");sg.addColorStop(.25,"rgba(242,178,51,.55)");sg.addColorStop(1,"rgba(242,178,51,0)");cx.fillStyle=sg;cx.fillRect(0,0,W,H);
+    cx.fillStyle="rgba(40,30,60,.75)";cx.beginPath();cx.moveTo(0,hz);for(let x=0;x<=W;x+=20)cx.lineTo(x,hz-30-Math.sin(x*.008+1)*22-Math.sin(x*.021)*10-mx*4);cx.lineTo(W,hz);cx.fill();
+    cx.fillStyle="rgba(22,18,40,.9)";gop(W*.18-mx*10,hz,64,90);gop(W*.9-mx*10,hz,40,56);
+    cx.fillStyle="rgb(14,16,30)";cx.fillRect(0,hz,W,H-hz);cx.fillStyle="rgb(46,42,58)";cx.beginPath();cx.moveTo(vx-4,hz);cx.lineTo(vx+4,hz);cx.lineTo(W*1.15,H);cx.lineTo(W*.05,H);cx.closePath();cx.fill();
+    for(let i=0;i<14;i++){const z=((i/14)+(t*.006))%1,z2=z+.035,y1=hz+(H-hz)*z*z,y2=hz+(H-hz)*z2*z2,xm=vx+(W*.6-vx)*z*z,xm2=vx+(W*.6-vx)*z2*z2;cx.strokeStyle=`rgba(242,178,51,${.25+z*.7})`;cx.lineWidth=1+z*6;cx.beginPath();cx.moveTo(xm,y1);cx.lineTo(xm2,y2);cx.stroke()}
+    palms.forEach(p=>{const z=(p.z+t*.004)%1,e=z*z;palm(vx+(W*.12+W*.9*e)*p.side+(p.side>0?0:-W*.02),hz+(H-hz)*e,.15+e*1.6)});
+    const hp=(t*.004)%1,he=hp*hp;if(hp<.9){const y=hz+(H-hz)*he*.9,x=vx-(W*.25)*he,r=2+he*30,g=cx.createRadialGradient(x,y,0,x,y,r*3);g.addColorStop(0,"rgba(255,250,220,.95)");g.addColorStop(1,"rgba(255,250,220,0)");cx.fillStyle=g;cx.beginPath();cx.arc(x-r*.9,y,r*3,0,7);cx.arc(x+r*.9,y,r*3,0,7);cx.fill()}
+    if(run&&!reduce)requestAnimationFrame(frame)}
+  size();frame();addEventListener("resize",()=>{size();if(reduce)frame()});
+  cv.parentElement.addEventListener("pointermove",e=>{const r=cv.getBoundingClientRect();mx=(e.clientX-r.left)/r.width-.5;if(reduce)frame()});
+  new IntersectionObserver(es=>{const v=es[0].isIntersecting;if(v&&!run){run=true;if(!reduce)requestAnimationFrame(frame)}run=v}).observe(cv);
+})();
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.remove("pre");io.unobserve(e.target)}}),{rootMargin:"0px 0px -10% 0px"});
+$$(".reveal").forEach(el=>{if(el.getBoundingClientRect().top>innerHeight){el.classList.add("pre");io.observe(el)}});
+if(routeHash() in ROUTE_STEP)setCheckout(true);
+setTimeout(()=>{renderHere();renderPlanGeo();probeDirectGeo()},1500);
+addEventListener("sst-payments",()=>{S.sessionLoaded=true;probeServerGeo();renderHere();if(geoAvail()){if(GEO.here&&!GEO.now)refreshHereWeather().then(renderHere);else if(!GEO.here)navigator.permissions?.query({name:"geolocation"}).then(q=>{if(q.state==="granted")detectLocation({quiet:true}).catch(()=>{})}).catch(()=>{})}renderPlanner();renderTrips();renderPay();renderOwner();renderTravel();if(routeHash() in TROUTE)enterTrip(routeHash())});
+addEventListener("sst-payfail",e=>toast("Payment failed: "+e.detail+". You can retry in the same window.",true));
+/* carousel + fan behaviour */
+(()=>{const st=$("#stage");if(!st)return;
+  st.addEventListener("mouseenter",()=>CAR.paused=true);st.addEventListener("mouseleave",()=>CAR.paused=false);
+  st.addEventListener("focusin",()=>CAR.paused=true);st.addEventListener("focusout",()=>CAR.paused=false);
+  let sx=null;st.addEventListener("touchstart",e=>{sx=e.touches[0].clientX;CAR.paused=true},{passive:true});
+  st.addEventListener("touchend",e=>{if(sx!=null){const dx=e.changedTouches[0].clientX-sx;if(Math.abs(dx)>40){CAR.idx+=dx<0?1:-1;updateRing()}}sx=null;setTimeout(()=>CAR.paused=false,4000)});
+  new IntersectionObserver(es=>{CAR.visible=es[0].isIntersecting}).observe(st);
+  carStart();
+  const fan=$("#fan");if(fan){new IntersectionObserver((es,o)=>{if(es[0].isIntersecting){setTimeout(()=>fan.classList.add("open"),400);o.disconnect()}},{threshold:.5}).observe(fan);fan.addEventListener("click",()=>fan.classList.toggle("open"))}
+})();
+/* ================= v3.2: Explore Tamil Nadu (real destination photos) =================
+   Self-hosted: the server collects photos from Wikimedia Commons (each attraction's own category, free licences only,
+   landscape and high resolution, links checked) and serves them at /api/photos.
+   Claude-hosted preview (no server): the page runs the same selection rules in the browser, if the preview allows it. */
+/*<destinations>*/const DESTS=[{"id":"kodaikanal","name":"Kodaikanal","district":"Dindigul","tagline":"Princess of hill stations: a star-shaped lake, cliff-edge walks and misty pine forests.","kw":["kodaikanal","kodai"],"cats":["Kodaikanal"],"attractions":[{"id":"kodai-lake","name":"Kodaikanal Lake","type":"lake","cats":["Kodaikanal Lake"],"kw":["kodaikanal lake","kodai lake"]},{"id":"coakers-walk","name":"Coaker's Walk","type":"viewpoint","cats":["Coaker's Walk"],"kw":["coaker"]},{"id":"pine-forest","name":"Pine Forest","type":"nature","cats":["Pine forest, Kodaikanal","Trees in Kodaikanal"],"kw":["pine"]},{"id":"pillar-rocks","name":"Pillar Rocks","type":"viewpoint","cats":["Pillar Rocks, Kodaikanal"],"kw":["pillar rock"]}]},{"id":"ooty","name":"Ooty","district":"Nilgiris","tagline":"Queen of hill stations: rolling tea gardens, a century-old botanical garden and the toy train.","kw":["ooty","udhagamandalam","ootacamund","nilgiri"],"cats":["Udhagamandalam","Ooty"],"attractions":[{"id":"ooty-botanical","name":"Government Botanical Garden","type":"nature","cats":["Government Botanical Garden"],"kw":["botanical"]},{"id":"doddabetta","name":"Doddabetta Peak","type":"viewpoint","cats":["Doddabetta"],"kw":["doddabetta"]},{"id":"ooty-tea","name":"Tea Gardens","type":"nature","cats":["Tea plantations in the Nilgiris","Tea plantations in Tamil Nadu"],"kw":["tea"],"needPlace":true},{"id":"toy-train","name":"Nilgiri Mountain Railway (Toy Train)","type":"railway","cats":["Nilgiri Mountain Railway"],"kw":["nilgiri mountain railway","toy train"]}]},{"id":"coimbatore","name":"Coimbatore","district":"Coimbatore","tagline":"Gateway to the Western Ghats: hill temples, the giant Adiyogi bust and forest waterfalls.","kw":["coimbatore","kovai"],"cats":["Coimbatore"],"attractions":[{"id":"marudhamalai","name":"Marudhamalai Temple","type":"temple","cats":["Marudamalai","Marudamalai Temple"],"kw":["marudamalai","marudhamalai","maruthamalai"]},{"id":"adiyogi","name":"Isha Adiyogi","type":"landmark","cats":["Adiyogi Shiva bust","Isha Yoga Center, Coimbatore"],"kw":["adiyogi","adi yogi"]},{"id":"kovai-kutralam","name":"Kovai Kutralam Falls","type":"waterfall","cats":["Kovai Kutralam Falls","Siruvani"],"kw":["kovai kutralam","kovai courtallam","siruvani"]}]},{"id":"valparai","name":"Valparai","district":"Coimbatore","tagline":"Forty hairpin bends up to emerald tea estates, a dam lake and rainforest waterfalls.","kw":["valparai","aliyar","anamalai"],"cats":["Valparai"],"attractions":[{"id":"valparai-tea","name":"Tea Estates","type":"nature","cats":["Valparai","Tea plantations in Tamil Nadu"],"kw":["tea"],"needPlace":true},{"id":"aliyar","name":"Aliyar Dam","type":"lake","cats":["Aliyar Reservoir"],"kw":["aliyar"]},{"id":"valparai-falls","name":"Waterfalls","type":"waterfall","cats":["Monkey Falls","Waterfalls in Tamil Nadu"],"kw":["monkey falls","valparai","aliyar"],"needPlace":true}]},{"id":"madurai","name":"Madurai","district":"Madurai","tagline":"The temple city: the towering gopurams of Meenakshi Amman and a royal Nayak palace.","kw":["madurai"],"cats":["Madurai"],"attractions":[{"id":"meenakshi","name":"Meenakshi Amman Temple","type":"temple","cats":["Madurai Meenakshi Temple","Gopurams of the Madurai Meenakshi Temple"],"kw":["meenakshi","minakshi"]},{"id":"nayakkar-mahal","name":"Thirumalai Nayakkar Mahal","type":"heritage","cats":["Thirumalai Nayakkar Mahal","Thirumalai Nayak Palace"],"kw":["nayak","nayakkar"]}]},{"id":"rameswaram","name":"Rameswaram","district":"Ramanathapuram","tagline":"An island pilgrimage: endless temple corridors, the Pamban sea bridge and the ghost town of Dhanushkodi.","kw":["rameswaram","rameshwaram","pamban","dhanushkodi"],"cats":["Rameswaram"],"attractions":[{"id":"ramanathaswamy","name":"Ramanathaswamy Temple","type":"temple","cats":["Ramanathaswamy Temple","Ramanathaswamy Temple corridor"],"kw":["ramanathaswamy","ramanathaswami","rameswaram temple"]},{"id":"pamban","name":"Pamban Bridge","type":"landmark","cats":["Pamban Bridge"],"kw":["pamban"]},{"id":"dhanushkodi","name":"Dhanushkodi","type":"beach","cats":["Dhanushkodi"],"kw":["dhanushkodi"]}]},{"id":"kanyakumari","name":"Kanyakumari","district":"Kanyakumari","tagline":"Where three seas meet: the Vivekananda Rock, the Thiruvalluvar statue and famous sunrises.","kw":["kanyakumari","kanniyakumari","cape comorin"],"cats":["Kanyakumari","Kanniyakumari"],"attractions":[{"id":"vivekananda-rock","name":"Vivekananda Rock Memorial","type":"landmark","cats":["Vivekananda Rock Memorial"],"kw":["vivekananda"]},{"id":"thiruvalluvar","name":"Thiruvalluvar Statue","type":"landmark","cats":["Thiruvalluvar Statue, Kanniyakumari","Thiruvalluvar Statue, Kanyakumari"],"kw":["valluvar"]},{"id":"kanyakumari-sunrise","name":"Sunrise at the Cape","type":"beach","cats":["Remote views of the Thiruvalluvar Statue and the Vivekananda Rock Memorial","Sunrises in Kanyakumari"],"kw":["sunrise","sunset","dawn"],"needPlace":true}]},{"id":"thanjavur","name":"Thanjavur","district":"Thanjavur","tagline":"Chola grandeur: the thousand-year-old Brihadeeswarar Temple and the Maratha palace.","kw":["thanjavur","tanjore","tanjavur"],"cats":["Thanjavur"],"attractions":[{"id":"brihadeeswarar","name":"Brihadeeswarar Temple","type":"temple","cats":["Brihadisvara Temple","Vimana of the Brihadisvara Temple","Central views of the Brihadisvara Temple"],"kw":["brihad","peruvudaiyar","big temple"]},{"id":"thanjavur-palace","name":"Thanjavur Maratha Palace","type":"heritage","cats":["Thanjavur Maratha Palace"],"kw":["palace"]}]},{"id":"chennai","name":"Chennai","district":"Chennai","tagline":"The capital by the sea: Marina Beach, Mylapore's Kapaleeshwarar Temple and Pallava Mahabalipuram.","kw":["chennai","madras","mylapore","mahabalipuram","mamallapuram","marina"],"cats":["Chennai"],"attractions":[{"id":"marina","name":"Marina Beach","type":"beach","cats":["Marina Beach"],"kw":["marina"]},{"id":"kapaleeshwarar","name":"Kapaleeshwarar Temple","type":"temple","cats":["Kapaleeshwarar Temple"],"kw":["kapaleeshwarar","kapaleeswarar","kapaleshwarar"]},{"id":"mahabalipuram","name":"Mahabalipuram Shore Temple","type":"heritage","district":"Chengalpattu","cats":["Shore Temple","Mahabalipuram Beach"],"kw":["shore temple","mahabalipuram","mamallapuram"]}]},{"id":"yercaud","name":"Yercaud","district":"Salem","tagline":"Jewel of the south: a boating lake, coffee-scented viewpoints and the Kiliyur falls.","kw":["yercaud"],"cats":["Yercaud"],"attractions":[{"id":"yercaud-lake","name":"Yercaud Lake","type":"lake","cats":["Yercaud Lake"],"kw":["lake"],"needPlace":true},{"id":"yercaud-views","name":"Viewpoints","type":"viewpoint","cats":["Yercaud"],"kw":["view","point","seat","peak"],"needPlace":true},{"id":"kiliyur","name":"Kiliyur Falls","type":"waterfall","cats":["Kiliyur Falls"],"kw":["kiliyur","falls"],"needPlace":true}]},{"id":"courtallam","name":"Courtallam","district":"Tenkasi","tagline":"The spa of South India: monsoon waterfalls you can bathe under, from Main Falls to Five Falls.","kw":["courtallam","kutralam","kuttalam","coutrallam"],"cats":["Courtallam waterfalls","Courtallam"],"attractions":[{"id":"main-falls","name":"Main Falls","type":"waterfall","cats":["Courtallam waterfalls"],"kw":["main fall","peraruvi"],"needPlace":true},{"id":"five-falls","name":"Five Falls","type":"waterfall","cats":["Courtallam waterfalls"],"kw":["five fall","aintharuvi"],"needPlace":true}]},{"id":"hogenakkal","name":"Hogenakkal","district":"Dharmapuri","tagline":"The smoking rocks: the Cauvery thunders through gorges, crossed in round coracle boats.","kw":["hogenakkal","hogenakal"],"cats":["Hogenakkal Falls"],"attractions":[{"id":"hogenakkal-falls","name":"Hogenakkal Falls","type":"waterfall","cats":["Hogenakkal Falls"],"kw":["hogenakkal","hogenakal"]},{"id":"cauvery","name":"Cauvery River & Coracles","type":"nature","cats":["Hogenakkal Falls","Coracles in India"],"kw":["cauvery","kaveri","coracle"],"needPlace":true}]}];/*</destinations>*/
+/*<photopick>*/const PhotoPick=(()=>{const module={exports:{}};/* Photo selection rules shared by the server and the page (copied into src/site.html by scripts/sync-shared.js).
+   A photo is used only if it is: from the place's own Commons category (or names the place in its title/categories),
+   freely licensed (CC0 / public domain / CC BY / CC BY-SA), a real photograph (JPEG/PNG/WebP), landscape and high resolution,
+   not a map/diagram/logo/old archive scan, and not already used for another destination. */
+(function (root, factory) { if (typeof module === "object" && module.exports) module.exports = factory(); else root.PhotoPick = factory(); })(typeof self !== "undefined" ? self : this, function () {
+  const API = "https://commons.wikimedia.org/w/api.php";
+  const BAD_TITLE = /\b(map|plan|diagram|logo|emblem|seal|flag|sign ?board|signage|ticket|chart|svg|drawing|sketch|painting|stamp|coin|poster|screenshot|selfie)\b|\.(svg|tif|tiff|gif|pdf|djvu)$/i;
+  const OLD = /\b1[89]\d\d\b/; /* archive photos (1800s–1999 in the title) */
+  const OK_LICENSE = /^(cc0|public domain|pd\b|pd-|cc[ -]by(-sa)?[ -]?\d|cc[ -]by(-sa)?$|attribution)/i;
+  const strip = html => String(html || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/\s+/g, " ").trim();
+  const norm = s => String(s || "").toLowerCase().replace(/_/g, " ");
+
+  /* Query: all files in a category (or a search), with size, licence, author and categories, plus a 1920 px thumbnail. */
+  function apiUrl(kind, value, origin) {
+    const p = { action: "query", format: "json", formatversion: "2", prop: "imageinfo|categories", iiprop: "url|size|mime|extmetadata", iiurlwidth: "1920",
+      iiextmetadatafilter: "LicenseShortName|LicenseUrl|Artist|Credit|ObjectName|DateTimeOriginal", cllimit: "max" };
+    if (kind === "category") Object.assign(p, { generator: "categorymembers", gcmtitle: "Category:" + value, gcmtype: "file", gcmlimit: "60" });
+    else Object.assign(p, { generator: "search", gsrsearch: value + " filetype:bitmap", gsrnamespace: "6", gsrlimit: "40" });
+    if (origin) p.origin = "*";
+    return API + "?" + Object.entries(p).map(([k, v]) => k + "=" + encodeURIComponent(v)).join("&");
+  }
+  /* One Commons file → a candidate photo (or null if it fails any rule). */
+  function candidate(page, ctx) {
+    const ii = page.imageinfo && page.imageinfo[0]; if (!ii) return null;
+    const title = page.title || "", t = norm(title), cats = (page.categories || []).map(c => norm(c.title)).join(" | ");
+    const m = ii.extmetadata || {}, lic = strip(m.LicenseShortName && m.LicenseShortName.value);
+    if (!/^image\/(jpeg|png|webp)$/.test(ii.mime || "")) return null;
+    if (BAD_TITLE.test(title) || OLD.test(title) || /historical|archival|old photo/.test(cats)) return null;
+    if (!(ii.width >= 1600 && ii.width >= ii.height * 1.25)) return null; /* landscape, high resolution */
+    if (!OK_LICENSE.test(lic) || /\bnc\b|\bnd\b|non-?commercial|noderiv/i.test(lic)) return null;
+    /* relevance: category files are already location-filed; search results (and broad categories) must name the place */
+    const hay = t + " | " + cats;
+    const placeOk = (ctx.placeKw || []).some(k => hay.includes(k)), attrOk = (ctx.kw || []).some(k => hay.includes(k));
+    if (ctx.from === "search" && !(attrOk && (placeOk || ctx.kwIsPlace))) return null;
+    if (ctx.from === "category" && ctx.needPlace && !(placeOk && attrOk)) return null;
+    if (!ii.thumburl) return null;
+    const quality = /featured pictures|quality images|valued images|pictures of the day/.test(cats) ? 1 : 0;
+    const author = strip(m.Artist && m.Artist.value).slice(0, 120) || "Unknown photographer";
+    const licUrl = strip(m.LicenseUrl && m.LicenseUrl.value);
+    return {
+      fileTitle: title, url: ii.thumburl, thumb: ii.thumburl.replace(/\/1920px-/, "/960px-"), small: ii.thumburl.replace(/\/1920px-/, "/500px-"),
+      width: ii.width, height: ii.height, sourceUrl: ii.descriptionurl || ("https://commons.wikimedia.org/wiki/" + encodeURIComponent(title.replace(/ /g, "_"))),
+      source: "Wikimedia Commons", author, license: lic, licenseUrl: /^https?:\/\//.test(licUrl) ? licUrl : "",
+      attribution: `Photo: ${author} / ${lic}, via Wikimedia Commons`,
+      score: quality * 100 + Math.min(ii.width, 6000) / 100 + (Math.abs(ii.width / ii.height - 1.5) < .25 ? 10 : 0) + (attrOk ? 15 : 0)
+    };
+  }
+  /* Pick a hero + 4–8 gallery photos for one destination from per-attraction candidate lists. No file is used twice site-wide. */
+  function assemble(dest, perAttraction, used, maxTotal = 8) {
+    const out = [], take = (c, a, category, featured) => { used.add(c.fileTitle); out.push({ ...c, destinationId: dest.id, destinationName: dest.name, district: a.district || dest.district, attraction: a.name, attractionId: a.id, category, featured: !!featured }); };
+    const lists = dest.attractions.map(a => ({ a, list: (perAttraction[a.id] || []).filter(c => !used.has(c.fileTitle)).sort((x, y) => y.score - x.score) }));
+    /* hero: the best photo of the first attraction that has one */
+    const heroFrom = lists.find(l => l.list.length);
+    if (heroFrom) take(heroFrom.list.shift(), heroFrom.a, heroFrom.a.type, true);
+    /* round-robin so every attraction is represented */
+    let added = true;
+    while (out.length < maxTotal && added) { added = false; for (const l of lists) { while (l.list.length && used.has(l.list[0].fileTitle)) l.list.shift(); if (l.list.length && out.length < maxTotal) { take(l.list.shift(), l.a, l.a.type, false); added = true; } } }
+    return out;
+  }
+  return { apiUrl, candidate, assemble, strip, OK_LICENSE };
+});
+;return module.exports})();/*</photopick>*/
+const EX={dest:(()=>{const v=LS.get("st.exdest","kodaikanal");return DESTS.some(d=>d.id===v)?v:DESTS[0].id})(),cat:"all",att:"",data:{},mode:"",status:"loading",used:new Set(),loading:{},blocked:false,tries:0,retry:null,lb:null,admin:null,io:null};
+const EX_TYPE={lake:"Lake",viewpoint:"Viewpoint",nature:"Nature",railway:"Heritage railway",temple:"Temple",landmark:"Landmark",waterfall:"Waterfall",heritage:"Heritage",beach:"Beach & sea",landscape:"Landscape"};
+const exDest=id=>DESTS.find(d=>d.id===id)||DESTS[0];
+const exImgs=id=>(EX.data[id]&&EX.data[id].images)||[];
+const exHeroOf=id=>{const l=exImgs(id);return l.find(i=>i.featured)||l[0]||null};
+/* Photo for a place name used elsewhere on the site (destination carousel, route stops). */
+function exPhotoFor(place){const P=norm(place||"");if(!P)return null;const d=DESTS.find(d=>d.kw.some(k=>P.includes(k))||P.includes(norm(d.name)));if(!d)return null;
+  const a=d.attractions.find(a=>a.kw.some(k=>P.includes(k))&&!["tea","lake","falls","palace","view","point","seat","peak","pine","sunrise","sunset","dawn"].includes(a.kw[0]));
+  const l=exImgs(d.id);return(a&&l.find(i=>i.attractionId===a.id))||exHeroOf(d.id)}
+const exSrcset=i=>{const seen=new Set();return[[i.small,500],[i.thumb,960],[i.url,1920]].filter(([u])=>u&&!seen.has(u)&&seen.add(u)).map(([u,w])=>`${esc(u)} ${w}w`).join(", ")};
+const exImg=(i,sizes,o={})=>`<img data-ph="${esc(i.destinationId)}|${esc(i.id||"")}" src="${esc(o.src||i.thumb||i.url)}" srcset="${exSrcset(i)}" sizes="${sizes}" alt="${esc(o.alt??(i.attraction+", "+i.destinationName+", Tamil Nadu"))}" ${o.eager?'fetchpriority="high"':'loading="lazy"'} decoding="async" referrerpolicy="no-referrer">`;
+const exCredit=(i,links=true)=>{const who=esc(i.author||"Unknown"),lic=esc(i.license||"");
+  if(!links)return`Photo: ${who} / ${lic}${i.source?" · "+esc(i.source):""}`;
+  return`Photo: ${i.sourceUrl?`<a href="${esc(i.sourceUrl)}" target="_blank" rel="noopener">${who}</a>`:who} / ${i.licenseUrl?`<a href="${esc(i.licenseUrl)}" target="_blank" rel="noopener">${lic}</a>`:lic}${i.source?`, ${i.source==="Wikimedia Commons"?"via ":""}${esc(i.source)}`:""}`};
+const exPost=(p,b)=>fetch(p,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-SST":"1"},body:JSON.stringify(b)}).then(async r=>{const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"Request failed");return j});
+
+async function exLoad(){
+  clearTimeout(EX.retry);
+  try{
+    const r=await fetch("/api/photos",{credentials:"same-origin",headers:{"X-SST":"1"}});
+    if(!r.ok||!/json/.test(r.headers.get("content-type")||""))throw new Error("no server");
+    const j=await r.json();if(!Array.isArray(j.destinations))throw new Error("no server");
+    EX.mode="server";EX.data=Object.fromEntries(j.destinations.map(d=>[d.id,d]));
+    EX.status=j.destinations.some(d=>d.images.length)?"ready":"pending";
+  }catch{if(EX.mode!=="server"){EX.mode="browser";EX.status="ready"}}
+  renderExplore();renderPlaces();renderRoutes();if(S.ownerTab==="photos")renderOwner();
+  /* first start: the server is still collecting; check back until every destination has photos */
+  if(EX.mode==="server"&&DESTS.some(d=>!exImgs(d.id).length)&&EX.tries++<40)EX.retry=setTimeout(exLoad,EX.status==="pending"?15e3:45e3);
+  if(EX.mode==="browser")exBrowserLoad(EX.dest);
+}
+async function exBrowserLoad(id){
+  if(EX.mode!=="browser"||EX.data[id]||EX.loading[id]||EX.blocked)return;
+  const dest=exDest(id);EX.loading[id]=true;renderExplore();
+  try{
+    const atts=[...dest.attractions,{id:dest.id+"-views",name:"Around "+dest.name,type:"landscape",cats:dest.cats,kw:dest.kw}],per={};
+    await Promise.all(atts.map(async a=>{const list=[];
+      for(const cat of a.cats||[]){const r=await fetch(PhotoPick.apiUrl("category",cat,true));if(!r.ok)throw new Error("HTTP "+r.status);const j=await r.json();
+        for(const p of(j.query&&j.query.pages)||[]){const c=PhotoPick.candidate(p,{from:"category",needPlace:!!a.needPlace,kw:a.kw,placeKw:dest.kw});if(c)list.push(c)}}
+      per[a.id]=list}));
+    const imgs=PhotoPick.assemble({...dest,attractions:atts},per,EX.used,8).map(i=>({...i,id:i.fileTitle.replace(/\W+/g,"").slice(-24)}));
+    EX.data[id]={...dest,images:imgs};
+  }catch{EX.blocked=true}
+  EX.loading[id]=false;renderExplore();renderPlaces();
+}
+function exFiltered(){const d=exDest(EX.dest);return exImgs(d.id).filter(i=>(EX.cat==="all"||i.category===EX.cat)&&(!EX.att||i.attractionId===EX.att))}
+
+function renderExplore(){
+  const R=$("#exBody"),C=$("#exChips");if(!R||!C)return;
+  C.innerHTML=DESTS.map(d=>{const h=exHeroOf(d.id);return`<button type="button" class="ex-chip" role="tab" data-exdest="${d.id}" aria-selected="${d.id===EX.dest}">${h?exImg(h,"34px",{src:h.small||h.thumb,alt:""}):'<span class="dot" aria-hidden="true"></span>'}${esc(d.name)}</button>`}).join("");
+  const d=exDest(EX.dest),imgs=exImgs(d.id),hero=exHeroOf(d.id);
+  const busy=EX.status==="loading"||!!EX.loading[d.id];
+  const note=imgs.length?"":busy?"":EX.mode==="browser"&&EX.blocked
+    ?`<div class="ex-note small">Photos can't load in this preview because it blocks the Wikimedia Commons image service. They show on the self-hosted site, where the server collects them.</div>`
+    :EX.mode==="server"?`<div class="ex-note small"><b>Collecting real photos of ${esc(d.name)}…</b> The server is gathering freely licensed photographs from Wikimedia Commons (the first run after starting takes a few minutes). They appear here automatically.</div>`
+    :`<div class="ex-note small">No suitable licensed photos of ${esc(d.name)} were found yet.</div>`;
+  const heroHtml=`<div class="ex-hero${busy||hero?" skel":""}" id="exHero">${hero?`<div class="bg">${exImg(hero,"(max-width:1180px) 100vw, 1180px",{eager:true,src:hero.url})}</div>`:""}
+    <div class="in"><div class="meta"><span class="ex-pill">${esc(d.district)} district</span><span class="ex-pill">${d.attractions.length} highlights</span>${imgs.length?`<span class="ex-pill">${imgs.length} photos</span>`:""}</div>
+    <h3>${esc(d.name)}</h3><p>${esc(d.tagline)}</p>
+    <div class="bk-actions"><button class="btn primary" type="button" data-exbook="${d.id}">Book a cab to ${esc(d.name)}</button><button class="btn ghost" type="button" data-explan="${d.id}">Plan this trip</button>${imgs.length?`<button class="btn ghost" type="button" data-exopen="${imgs.indexOf(hero)}" data-exall="1">View photos</button>`:""}</div></div>
+    ${hero?`<p class="ex-credit">${esc(hero.attraction)} · ${exCredit(hero)}</p>`:""}</div>`;
+  const atts=d.attractions.map(a=>{const mine=imgs.filter(i=>i.attractionId===a.id),p=mine.find(i=>!i.featured)||mine[0];
+    return`<button type="button" class="exatt tilt3d${p||busy?" skel":""}" data-exatt="${a.id}" aria-pressed="${EX.att===a.id}" aria-label="${esc(a.name)}: show its photos">${p?exImg(p,"(max-width:640px) 50vw, 300px",{alt:""}):""}<span class="t"><small>${esc(EX_TYPE[a.type]||a.type)} · ${esc(a.district||d.district)}</small><b>${esc(a.name)}</b><em>${busy?"Loading photos…":mine.length?`${mine.length} photo${mine.length>1?"s":""} →`:"Photos coming soon"}</em></span></button>`}).join("");
+  const cats=[...new Set(imgs.map(i=>i.category))];
+  if(EX.cat!=="all"&&!cats.includes(EX.cat))EX.cat="all";
+  const filt=imgs.length>1?`<div class="ex-filters" role="group" aria-label="Filter photos"><button type="button" class="ex-f" data-excat="all" aria-pressed="${EX.cat==="all"&&!EX.att}">All photos</button>${cats.length>1?cats.map(c=>`<button type="button" class="ex-f" data-excat="${esc(c)}" aria-pressed="${EX.cat===c&&!EX.att}">${esc(EX_TYPE[c]||c)}</button>`).join(""):""}${EX.att?`<button type="button" class="ex-f" data-exatt="${esc(EX.att)}" aria-pressed="true">${esc(d.attractions.find(a=>a.id===EX.att)?.name||"")} ✕</button>`:""}</div>`:"";
+  const list=exFiltered(),n=list.length,LAY=k=>n>=8?(k%8===0?"big":k%8===3?"wide":""):n>=4?([0,3,4,7].slice(0,8-n).includes(k)?"wide":""):"";
+  const grid=busy?Array.from({length:6},(_,k)=>`<div class="exph skel in ${["big","","","wide","",""][k]}" aria-hidden="true"></div>`).join("")
+    :list.map((i,k)=>{const lay=LAY(k);return`<button type="button" class="exph skel tilt3d ${lay}" data-exopen="${k}" style="transition-delay:${(k%4)*70}ms" aria-label="View full screen: ${esc(i.attraction)}, ${esc(i.destinationName)}">${exImg(i,lay?"(max-width:640px) 100vw, 780px":"(max-width:640px) 50vw, (max-width:1000px) 33vw, 390px")}<span class="cap"><b>${esc(i.attraction)}</b><small>${exCredit(i,false)}</small></span>${i.featured?'<span class="live-tag">Cover photo</span>':""}</button>`}).join("");
+  R.innerHTML=heroHtml+note+`<div class="ex-sub"><h3>Highlights of ${esc(d.name)}</h3><span class="small muted">Tap a highlight to see its photos</span></div><div class="ex-atts">${atts}</div>`
+    +(imgs.length||busy?`<div class="ex-sub"><h3>Photo gallery</h3>${filt}</div><div class="ex-grid" id="exGrid">${grid||'<div class="ex-empty small">No photos match this filter.</div>'}</div><p class="small muted" style="margin-top:12px">Photos from Wikimedia Commons and our owner, used under the licence shown on each. Tap a photo for full credits.</p>`:"");
+  EX.io=EX.io||new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add("in");EX.io.unobserve(e.target)}}),{rootMargin:"0px 0px -30px"});
+  R.querySelectorAll(".exph:not(.in)").forEach(el=>EX.io.observe(el));
+  [...R.querySelectorAll("img[data-ph]"),...C.querySelectorAll("img[data-ph]")].forEach(im=>{if(im.complete&&im.naturalWidth)exLoaded(im)});
+  exParallax();
+}
+function exLoaded(im){im.classList.add("ok");const s=im.closest(".skel");if(s)s.classList.remove("skel")}
+function exPick(id){if(!DESTS.some(d=>d.id===id))return;EX.dest=id;EX.cat="all";EX.att="";LS.set("st.exdest",id);renderExplore();exBrowserLoad(id);
+  const c=$(`#exChips [data-exdest="${id}"]`);if(c&&c.scrollIntoView)c.scrollIntoView({inline:"center",block:"nearest",behavior:"smooth"})}
+/* Parallax on the hero photo */
+let exRaf=0;
+function exParallax(){const h=$("#exHero"),bg=h&&h.querySelector(".bg");if(!bg||matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+  const r=h.getBoundingClientRect();if(r.bottom<0||r.top>innerHeight)return;
+  const off=Math.max(-1,Math.min(1,(r.top+r.height/2-innerHeight/2)/(innerHeight/2+r.height/2)));bg.style.transform=`translate3d(0,${(off*r.height*.07).toFixed(1)}px,0)`}
+addEventListener("scroll",()=>{if(!exRaf)exRaf=requestAnimationFrame(()=>{exRaf=0;exParallax()})},{passive:true});
+/* Images: reveal when loaded; if one fails, try the full size once, then hide it and tell the server (it re-checks and hides dead links). */
+document.addEventListener("load",e=>{const im=e.target;if(im instanceof HTMLImageElement&&im.dataset.ph)exLoaded(im)},true);
+document.addEventListener("error",e=>{const im=e.target;if(!(im instanceof HTMLImageElement)||!im.dataset.ph)return;
+  const[dest,id]=im.dataset.ph.split("|"),all=exImgs(dest),p=all.find(i=>i.id===id);
+  if(p&&!im.dataset.retry&&p.url&&im.getAttribute("src")!==p.url){im.dataset.retry="1";im.removeAttribute("srcset");im.src=p.url;return}
+  if(p){EX.data[dest].images=all.filter(i=>i!==p);if(p.featured&&EX.data[dest].images[0])EX.data[dest].images[0].featured=true}
+  if(EX.mode==="server"&&id)exPost("/api/photos/broken",{destinationId:dest,id}).catch(()=>{});
+  if(im.closest(".lb-img")){im.replaceWith(Object.assign(document.createElement("p"),{textContent:"This photo couldn't load."}));return}
+  const card=im.closest(".exph");if(card){card.remove();return}
+  if(im.closest("#exHero"))return renderExplore();
+  const s=im.closest(".skel");if(s)s.classList.remove("skel");im.remove();
+},true);
+
+/* Full-screen viewer */
+function exOpen(k,all){const d=exDest(EX.dest),list=all?exImgs(d.id):exFiltered();if(!list.length)return;
+  EX.lb={list,i:Math.max(0,Math.min(Number(k)||0,list.length-1)),from:document.activeElement};
+  $("#lightbox").hidden=false;document.body.classList.add("lb-open");exLbShow();$("#lbClose").focus()}
+function exLbShow(){const{list,i}=EX.lb,p=list[i],n=list.length;
+  $("#lbImg").innerHTML=exImg(p,"100vw",{src:p.url,eager:true});
+  $("#lbCount").textContent=`${i+1} / ${n}`;$("#lbPrev").hidden=$("#lbNext").hidden=n<2;
+  $("#lbCap").innerHTML=`<b>${esc(p.attraction)}</b> · ${esc(p.destinationName)}, ${esc(p.district)} district<br><span class="small">${exCredit(p)}${p.sourceUrl?` · <a href="${esc(p.sourceUrl)}" target="_blank" rel="noopener">Photo details</a>`:""}</span>`;
+  const nx=list[(i+1)%n];if(nx&&n>1){const pre=new Image();pre.referrerPolicy="no-referrer";pre.src=nx.url}}
+function exLbStep(s){if(!EX.lb)return;const n=EX.lb.list.length;EX.lb.i=(EX.lb.i+s+n)%n;exLbShow()}
+function exClose(){if(!EX.lb)return;$("#lightbox").hidden=true;document.body.classList.remove("lb-open");$("#lbImg").innerHTML="";const f=EX.lb.from;EX.lb=null;if(f&&f.focus)f.focus()}
+document.addEventListener("keydown",e=>{if(!EX.lb)return;
+  if(e.key==="Escape"){e.preventDefault();e.stopPropagation();exClose()}else if(e.key==="ArrowRight")exLbStep(1);else if(e.key==="ArrowLeft")exLbStep(-1);
+  else if(e.key==="Tab"){const f=$$("#lightbox button:not([hidden]),#lightbox a[href]");if(!f.length)return;const a=f.indexOf(document.activeElement);
+    if(e.shiftKey&&a<=0){e.preventDefault();f[f.length-1].focus()}else if(!e.shiftKey&&a===f.length-1){e.preventDefault();f[0].focus()}}},true);
+{let sx=null,sy=0;const st=document.getElementById("lbStage");
+  if(st){st.addEventListener("touchstart",e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});
+  st.addEventListener("touchend",e=>{if(sx==null)return;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;sx=null;
+    if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy))exLbStep(dx<0?1:-1);else if(dy>90&&Math.abs(dy)>Math.abs(dx))exClose()})}}
+
+document.addEventListener("click",e=>{const t=e.target.closest?.("[data-exdest],[data-excat],[data-exatt],[data-exopen],[data-exbook],[data-explan],#lbClose,#lbPrev,#lbNext,#lightbox");if(!t)return;
+  if(t.id==="lightbox"){if(e.target===t||e.target.id==="lbStage"||e.target.id==="lbImg")exClose();return}
+  if(t.id==="lbClose")return exClose();if(t.id==="lbPrev")return exLbStep(-1);if(t.id==="lbNext")return exLbStep(1);
+  if(t.dataset.exdest){history.replaceState(null,"","#explore-"+t.dataset.exdest);return exPick(t.dataset.exdest)}
+  if(t.dataset.excat){EX.cat=t.dataset.excat;EX.att="";return renderExplore()}
+  if(t.dataset.exatt){EX.att=EX.att===t.dataset.exatt?"":t.dataset.exatt;EX.cat="all";renderExplore();const g=$("#exGrid");if(g&&EX.att)g.scrollIntoView({behavior:"smooth",block:"nearest"});return}
+  if(t.dataset.exopen!=null)return exOpen(t.dataset.exopen,!!t.dataset.exall);
+  if(t.dataset.exbook){const d=exDest(t.dataset.exbook);const from=S.wiz.trip.from&&!sameCity(S.wiz.trip.from,d.name)?S.wiz.trip.from:(GEO.here&&GEO.here.city)||"";bookRoute(from,d.name);return}
+  if(t.dataset.explan){const d=exDest(t.dataset.explan);savePlan({destination:d.name}).then(()=>{renderPlanner();location.hash="#planner";toast(`${d.name} set as your trip destination. Add dates and budget to see the cost.`)}).catch(err=>toast(err.message||"Couldn't save the plan.",true))}
+});
+/* Deep links: /#explore-madurai opens that destination */
+function exFromHash(){const h=routeHash();if(!h.startsWith("explore-"))return;const id=h.slice(8);if(!DESTS.some(d=>d.id===id))return;
+  if(EX.dest!==id)exPick(id);[0,300,900,1800].forEach(ms=>setTimeout(()=>{if(landUser)return;const el=$("#explore");if(el&&Math.abs(el.getBoundingClientRect().top)>4)el.scrollIntoView({block:"start"})},ms))}
+addEventListener("hashchange",()=>{landUser=false;exFromHash()});
+
+/* Agent: show a destination's photos and highlights */
+function exploreTool(){return{name:"show_destination",description:"Show the customer real photos and highlights of a Tamil Nadu destination in the Explore section of the page: "+DESTS.map(d=>d.name).join(", ")+". Returns its district, highlights and how many photos are shown. Use when they ask what a place looks like or what to see there.",
+  inputSchema:{type:"object",properties:{destination:{type:"string"}},required:["destination"]},
+  execute(i){const P=norm(i.destination||""),d=DESTS.find(d=>d.id===P||norm(d.name)===P||d.kw.some(k=>P.includes(k))||d.attractions.some(a=>a.kw.some(k=>k.length>4&&P.includes(k))));
+    if(!d)return{found:false,available:DESTS.map(d=>d.name)};
+    exPick(d.id);history.replaceState(null,"","#explore-"+d.id);setTimeout(()=>$("#explore")?.scrollIntoView({behavior:"smooth",block:"start"}),300);
+    return{found:true,name:d.name,district:d.district,about:d.tagline,highlights:d.attractions.map(a=>a.name),photos_shown:exImgs(d.id).length,note:exImgs(d.id).length?"Photos are now on screen with photographer credits.":"Photos are still being collected; the highlights are listed on screen."}}}}
+
+/* Owner console → Photos */
+async function exAdminLoad(){
+  try{const r=await fetch("/api/photos?all=1",{credentials:"same-origin",headers:{"X-SST":"1"}});const j=await r.json();if(!r.ok)throw new Error(j.error||"Couldn't load photos.");
+    const wasRunning=EX.admin&&EX.admin.job&&EX.admin.job.running;EX.admin=j;if(wasRunning&&!(j.job&&j.job.running))exLoad();}
+  catch(e){EX.admin={error:e.message,destinations:[]}}
+  if(S.ownerTab==="photos")renderOwner();
+  clearTimeout(EX.adminT);if(EX.admin.job&&EX.admin.job.running&&S.ownerTab==="photos")EX.adminT=setTimeout(exAdminLoad,4000);
+}
+function oPhotos(){
+  if(EX.mode!=="server")return`<div class="empty">Destination photos are collected by your self-hosted server from Wikimedia Commons. Open the site on your server to manage them here.</div>`;
+  if(!EX.admin){exAdminLoad();return`<div class="empty">Loading photos…</div>`}
+  if(EX.admin.error)return`<div class="blocked">${esc(EX.admin.error)}</div>`;
+  const j=EX.admin.job||{},own=S.role==="owner";
+  const head=`<div class="panel" style="padding:16px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:space-between"><div style="min-width:0;flex:1 1 320px"><h3>Destination photos</h3><p class="small muted" style="margin-top:4px">Real photographs from Wikimedia Commons: taken at the attraction (from its own Commons category), free to use commercially (CC0, public domain, CC BY, CC BY-SA), landscape, at least 1600 px wide, link checked, and never repeated across destinations. Each shows its photographer and licence. Refreshes weekly by itself.</p>
+    ${j.running?`<p class="small" style="margin-top:6px"><b>Collecting… ${j.done||0} of ${j.total||0}</b> ${esc(j.current||"")}</p>`:j.finishedAt?`<p class="small muted" style="margin-top:6px">Last refresh ${fmtTime(j.finishedAt)}${(j.errors||[]).length?` · <span style="color:var(--warn)">${j.errors.map(esc).join(" · ")}</span>`:""}</p>`:""}</div>
+    <button class="btn primary sm" type="button" data-phref="all" ${j.running?"disabled":""}>Refresh all from Commons</button></div>`;
+  const add=own?`<details class="panel ph-d"><summary><b>Add a licensed photo</b> <span class="small muted">e.g. from Tamil Nadu Tourism or your own photographer</span></summary>
+    <form id="phAdd" class="form-grid" style="margin-top:12px" novalidate>
+      <label class="f"><span>Destination and highlight</span><select name="where" required>${DESTS.map(d=>`<optgroup label="${esc(d.name)}"><option value="${d.id}|">${esc(d.name)} (general view)</option>${d.attractions.map(a=>`<option value="${d.id}|${a.id}">${esc(a.name)}</option>`).join("")}</optgroup>`).join("")}</select></label>
+      <label class="f"><span>Photo link (https)</span><input name="url" type="url" required placeholder="https://…/photo.jpg"></label>
+      <label class="f"><span>Photographer or owner</span><input name="author" required maxlength="120"></label>
+      <label class="f"><span>Licence</span><input name="license" required maxlength="80" placeholder="e.g. Licensed to Sashwanth Travels"></label>
+      <label class="f"><span>Source</span><input name="source" required maxlength="80" placeholder="e.g. Tamil Nadu Tourism"></label>
+      <label class="f"><span>Source page (optional)</span><input name="sourceUrl" type="url" placeholder="https://…"></label>
+      <div class="form-actions" style="grid-column:1/-1"><span class="small muted">Only add photos you have the right to use. The link is checked before it is shown.</span><button class="btn primary" type="submit">Add photo</button></div></form></details>`:"";
+  const rows=(EX.admin.destinations||[]).map(d=>{const shown=d.images.filter(i=>!i.hidden).length,hid=d.images.length-shown;
+    return`<details class="panel ph-d"${d.id===EX.adminOpen?" open":""} data-phd="${d.id}"><summary><b>${esc(d.name)}</b><span class="small muted">${esc(d.district)} district · ${shown} shown${hid?` · ${hid} hidden`:""}${d.updatedAt?` · updated ${fmtTime(d.updatedAt)}`:""}</span>${shown<4?'<span class="chip warn">Needs photos</span>':""}</summary>
+    <div class="ph-grid">${d.images.map(i=>`<div class="ph-item${i.hidden?" off":""}"><img src="${esc(i.small||i.thumb||i.url)}" alt="${esc(i.attraction)}" loading="lazy" referrerpolicy="no-referrer"><div class="small"><b>${esc(i.attraction)}</b> ${i.featured?'<span class="chip ok">Cover</span>':""}${i.manual?'<span class="chip info">Added by owner</span>':""}${i.brokenAt?'<span class="chip warn">Link broken</span>':""}<br>${esc(i.author)} · ${esc(i.license)}${i.sourceUrl?` · <a href="${esc(i.sourceUrl)}" target="_blank" rel="noopener">Source</a>`:""}
+      <div class="bk-actions" style="margin-top:6px"><button class="btn sm" type="button" data-phfeat="${d.id}|${esc(i.id)}" ${i.featured?"disabled":""}>Make cover</button><button class="btn sm" type="button" data-phhide="${d.id}|${esc(i.id)}|${i.hidden?0:1}">${i.hidden?"Show":"Hide"}</button></div></div></div>`).join("")||'<p class="small muted">No photos yet.</p>'}</div>
+    <button class="btn sm" type="button" data-phref="${d.id}" ${j.running?"disabled":""}>Refresh ${esc(d.name)} from Commons</button></details>`}).join("");
+  return head+add+rows;
+}
+document.addEventListener("toggle",e=>{const d=e.target;if(d.matches&&d.matches("details[data-phd]")&&d.open)EX.adminOpen=d.dataset.phd},true);
+document.addEventListener("click",async e=>{const b=e.target.closest?.("[data-phref],[data-phfeat],[data-phhide]");if(!b)return;b.disabled=true;
+  try{
+    if(b.dataset.phref){const r=await exPost("/api/photos/refresh",b.dataset.phref==="all"?{}:{destinationId:b.dataset.phref});toast(r.started?"Collecting photos from Wikimedia Commons…":"A refresh is already running.")}
+    else if(b.dataset.phfeat){const[d,id]=b.dataset.phfeat.split("|");await exPost("/api/photos/update",{destinationId:d,id,featured:true});toast("Cover photo changed.")}
+    else{const[d,id,h]=b.dataset.phhide.split("|");await exPost("/api/photos/update",{destinationId:d,id,hidden:h==="1"});toast(h==="1"?"Photo hidden from the site.":"Photo shown again.")}
+    await exAdminLoad();exLoad();
+  }catch(err){toast(err.message,true);b.disabled=false}
+});
+document.addEventListener("submit",async e=>{if(e.target.id!=="phAdd")return;e.preventDefault();const f=e.target,v=Object.fromEntries(new FormData(f));
+  const[destinationId,attractionId]=String(v.where).split("|");const btn=f.querySelector("[type=submit]");
+  if(!/^https:\/\//.test(v.url||""))return toast("Use a full https link to the photo.",true);
+  for(const[k,l]of[["author","photographer or owner"],["license","licence"],["source","source"]])if(!String(v[k]||"").trim())return toast(`Enter the ${l}.`,true);
+  btn.disabled=true;
+  try{await exPost("/api/photos/add",{destinationId,attractionId,url:v.url,author:v.author,license:v.license,source:v.source,sourceUrl:v.sourceUrl});toast("Photo added.");EX.adminOpen=destinationId;f.reset();await exAdminLoad();exLoad()}
+  catch(err){toast(err.message,true)}finally{btn.disabled=false}
+});
+
+boot();renderExplore();exLoad();exFromHash();
+})();
+

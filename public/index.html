@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sashwanth Travels</title>
+<meta name="description" content="Book cabs, Tempo Travellers and tour trips across Tamil Nadu with Saarathi, our AI booking agent.">
+<meta name="theme-color" content="#13213A">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%2313213A' stroke='%23E39E12' stroke-width='2'/%3E%3Cpath d='M16 4L19 16L16 28L13 16Z' fill='%23E39E12'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Hind+Madurai:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/site.css?v=3.2.0-mvwa2xms">
+<script src="/claude-shim.js?v=3.2.0-mvwa2xms"></script>
+</head>
+<body>
+<header class="nav" id="top">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Sashwanth Travels home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="none" stroke="#E39E12" stroke-width="2"/><path d="M16 4 L19 16 L16 28 L13 16 Z" fill="#E39E12"/><circle cx="16" cy="16" r="2.5" fill="#13213A"/></svg>
+      <span id="brandName">Sashwanth Travels</span>
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="#agent">AI Agent</a><a href="#book-trip">Book</a><a href="#travel" data-navtravel hidden>Flights &amp; Hotels</a><a href="#planner">Planner</a><a href="#fleet">Fleet</a><a href="#places">Destinations</a><a href="#pay">Payments</a><a href="#trips">My Trips<span class="badge" id="tripBadge" hidden>0</span></a><a href="#gallery">Live gallery</a><a href="#contact">Contact</a><a href="#owner" id="ownerLink" hidden>Console<span class="badge" id="ownerBadge" hidden>0</span></a>
+    </nav>
+    <div class="bellwrap"><button class="bell" id="bellBtn" type="button" hidden aria-expanded="false" aria-controls="bellPanel" aria-label="Updates"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg><span class="bcount" id="bellCount" hidden>0</span></button><div class="bellpanel" id="bellPanel" hidden role="dialog" aria-label="Updates"></div></div>
+    <a class="acct" href="#account" id="acctChip" aria-label="Your account"><span class="ac-dot">?</span><span class="ac-txt">Sign in</span></a>
+    <button class="btn sm menu-btn" id="menuBtn" aria-expanded="false" aria-controls="drawer">Menu</button>
+  </div>
+</header>
+<nav class="drawer" id="drawer" hidden aria-label="Mobile">
+  <a href="#agent">AI Agent</a><a href="#book-trip">Book a trip</a><a href="#travel" data-navtravel hidden>Flights &amp; Hotels</a><a href="#planner">Trip planner &amp; budget</a><a href="#places">Destinations</a><a href="#explore">Explore Tamil Nadu</a><a href="#fleet">Fleet</a><a href="#how">How it works</a><a href="#routes">Routes &amp; stops</a><a href="#pay">Payments &amp; Policies</a><a href="#trips">My Trips</a><a href="#account">My account</a><a href="#gallery">Live gallery</a><a href="#contact">Contact</a><a href="#owner" id="ownerLink2" hidden>Console</a><button type="button" class="drawer-music" data-music="1"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg><span>Music: off</span></button>
+</nav>
+
+<div class="banner" id="sampleBanner" hidden>
+  <div class="wrap"><span class="chip sample">SAMPLE DATA</span><span id="sampleText">Vehicles, rates and policies shown here are placeholders until the owner completes Business Setup. Booking requests are switched off until then.</span></div>
+</div>
+
+<section class="hero" aria-labelledby="heroTitle">
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow" id="heroEyebrow">Cabs · Tempo Travellers · Tour packages · Tamil Nadu</p>
+      <h1 id="heroTitle">Say where.<em>We'll drive.</em></h1>
+      <p class="lede">Tell Saarathi, our booking agent, about your trip by voice or text. It checks our vehicles and calendar, works out the fare from our rate card, suggests stops on the way, and hands you a booking to confirm.</p>
+      <div class="odo" aria-label="Fleet summary">
+        <div><b id="odoVeh">--</b><span>Vehicle types</span></div>
+        <div><b id="odoSeats">--</b><span>Max seats</span></div>
+        <div><b id="odoRate">--</b><span>From / km</span></div>
+      </div>
+      <div class="hero-cta">
+        <a class="btn primary" href="#agent" id="talkBtn">Talk to Saarathi</a>
+        <a class="btn ghost" href="#book-trip">Book with the form</a>
+      </div>
+      <div class="herebar" id="hereBar" hidden aria-live="polite"></div>
+    </div>
+
+    <div class="agent" id="agent" aria-label="Saarathi AI booking agent">
+      <div class="agent-head">
+        <div class="avatar" id="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="#F2B233" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3v6.5M4.5 16.5 9.8 13.3M19.5 16.5 14.2 13.3"/></svg></div>
+        <div class="who"><b>Saarathi</b><div id="agentStatus">Booking agent · connecting…</div></div>
+        <div class="agent-tools">
+          <select id="langSel" aria-label="Language"><option value="en-IN">English</option><option value="ta-IN">தமிழ்</option></select>
+          <button class="icon-btn" id="speakBtn" aria-pressed="false" title="Read replies aloud" aria-label="Read replies aloud"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg></button>
+          <button class="icon-btn" id="resetBtn" title="New conversation" aria-label="New conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+        </div>
+      </div>
+      <div class="msgs" id="msgs" aria-live="polite"></div>
+      <div class="quick" id="quick"></div>
+      <form class="composer" id="composer">
+        <button type="button" class="icon-btn" id="micBtn" title="Speak" aria-label="Speak your request"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <textarea id="chatIn" rows="1" placeholder="e.g. Book a trip from Chennai to Madurai for two days, 4 people" aria-label="Message"></textarea>
+        <button type="button" class="icon-btn" id="stopBtn" hidden title="Stop" aria-label="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button>
+        <button type="submit" class="icon-btn" id="sendBtn" title="Send" aria-label="Send" style="background:var(--accent);border-color:var(--accent);color:var(--accent-ink)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<div class="ticker-band" aria-hidden="true"><div class="ticker" id="ticker"></div></div>
+
+<section class="trust-wrap" aria-label="At a glance"><div class="wrap"><div class="trust" id="trust"></div></div></section>
+
+<section class="places" id="places" aria-labelledby="placesTitle">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">Where to next?</p><h2 id="placesTitle">Destinations we drive to</h2></div><p>Spin through our routes. Tap the front card to book that trip.</p></div>
+    <div class="stage" id="stage"><div class="ring-scale"><div class="ring" id="ring"></div></div></div>
+    <div class="car-ctrl">
+      <button type="button" class="ctrl" id="carPrev" aria-label="Previous destination"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <div class="cdots" id="cdots"></div>
+      <button type="button" class="ctrl" id="carNext" aria-label="Next destination"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+    </div>
+    <p class="car-now" id="carNow" aria-live="polite"></p>
+  </div>
+</section>
+
+<section class="block explore reveal" id="explore" aria-labelledby="exTitle">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">Explore Tamil Nadu</p><h2 id="exTitle">Real places, real photographs</h2></div><p>Pick a destination to see its highlights. Every photo is of the place named, with the photographer and licence credited. Tap any photo to view it full screen.</p></div>
+    <div class="ex-chips" id="exChips" role="tablist" aria-label="Destinations"></div>
+    <div id="exBody"></div>
+  </div>
+</section>
+
+<section class="block" id="travel" hidden aria-labelledby="travelTitle">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">Fly and stay</p><h2 id="travelTitle">Flights &amp; hotels</h2></div><p>Live prices from airlines and hotels, paid in rupees. We re-check the price before you pay and confirm with the airline or hotel straight after.</p></div>
+    <p id="travelNote" class="small" style="margin-bottom:10px"></p>
+    <div class="ttabs" role="tablist" aria-label="Search type"><button type="button" role="tab" data-ttab="flight" aria-selected="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 16l20-6-20-6 3 6z M5 10h9"/></svg>Flights</button><button type="button" role="tab" data-ttab="hotel" aria-selected="false"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 20V6h8v14 M11 10h10v10 M3 20h18"/></svg>Hotels</button></div>
+    <div class="panel tsearch" id="tSearch"></div>
+    <div id="tResults" aria-live="polite"></div>
+  </div>
+</section>
+
+<section class="block" id="travelck" hidden>
+  <div class="wrap">
+    <div class="ck-head" style="display:flex"><a class="ck-back" href="#travel">← Back to search</a><span class="ck-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Secure booking</span></div>
+    <div class="panel tck" id="tckBody"></div>
+  </div>
+</section>
+
+<section class="block" id="planner" aria-labelledby="plannerTitle">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">Plan before you book</p><h2 id="plannerTitle">Trip planner &amp; budget</h2></div><p>Tell us the trip once — here or to Saarathi. The budget fills in from real prices only: your bookings, live search results and our own rate card. Nothing is booked until you approve and pay.</p></div>
+    <div id="plannerBody"></div>
+  </div>
+</section>
+
+<section class="block reveal" id="book">
+  <div class="wrap">
+    <div class="ck-head" id="ckHead"><a class="ck-back" href="#top">← Back to site</a><span class="ck-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Secure booking</span></div>
+    <div class="sec-head"><div><p class="eyebrow">Book without chat</p><h2>Plan a trip</h2></div><p>The same rate card and calendar the agent uses. Fares follow the outstation rule: chargeable km is the higher of actual km and the daily minimum, plus driver bata per day.</p></div>
+    <div class="panel wizard">
+      <ol class="steps" id="steps">
+        <li data-s="1"><a href="#book-trip"><b>1</b>Trip</a></li><li data-s="2"><a href="#book-vehicle"><b>2</b>Vehicle</a></li><li data-s="3"><a href="#book-details"><b>3</b>Your details</a></li><li data-s="4"><a href="#book-review"><b>4</b>Review</a></li><li data-s="5"><a href="#book-pay"><b>5</b>Pay</a></li>
+      </ol>
+      <div class="step-body" id="stepBody"></div>
+    </div>
+  </div>
+</section>
+
+<section class="block reveal" id="fleet" style="background:var(--sunk)">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">Our vehicles</p><h2>The fleet</h2></div><p>Rates shown per km with the daily minimum and driver bata. Tolls, parking and inter-state permits are handled as stated under Payments &amp; Policies.</p></div>
+    <div class="grid g3" id="fleetGrid"></div>
+  </div>
+</section>
+
+<section class="block reveal" id="how">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">How it works</p><h2>Four steps to the road</h2></div><p>From one sentence to a confirmed trip, with every price and photo visible to you.</p></div>
+    <div class="steps4">
+      <a class="panel hstep" href="#agent"><span class="n">1</span><h3>Tell Saarathi</h3><p>Speak or type where, when and how many people. Or use the booking form.</p><span class="go">Open the agent →</span></a>
+      <a class="panel hstep" href="#book-trip"><span class="n">2</span><h3>Confirm the card</h3><p>See the vehicle, availability and fare breakdown, then tap confirm.</p><span class="go">Start booking →</span></a>
+      <a class="panel hstep" href="#book-pay"><span class="n">3</span><h3>Pay the advance</h3><p>Pay online for instant confirmation, or by UPI/bank transfer.</p><span class="go">Go to payment →</span></a>
+      <a class="panel hstep" href="#trips"><span class="n">4</span><h3>Ride &amp; track</h3><p>Driver details, live trip photos, and a final bill on actual odometer km.</p><span class="go">Open My Trips →</span></a>
+    </div>
+  </div>
+</section>
+
+<section class="block reveal" id="routes">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">Where we go</p><h2>Routes &amp; stops</h2></div><p>Pick a corridor to see the road distance on our route table and places worth a halt along the way. Ask Saarathi for any other route.</p></div>
+    <div class="route-pick" id="routePick" role="group" aria-label="Choose a route"></div>
+    <div class="route-layout">
+      <div class="panel"><ul class="timeline" id="routeLine"></ul></div>
+      <div class="grid g2" id="destCards"></div>
+    </div>
+  </div>
+</section>
+
+<section class="block reveal" id="live" style="background:var(--sunk)">
+  <div class="wrap live-wrap">
+    <div>
+      <p class="eyebrow">Real-time trip photos</p>
+      <h2>See your trip as it happens</h2>
+      <p class="lede2">Your driver photographs the vehicle at pickup, the odometer at the start and end, and every toll receipt. They appear on your phone straight away, and your final bill is worked out from them.</p>
+      <a class="btn primary" href="#trips">Open My Trips</a>
+    </div>
+    <div class="fan" id="fan" role="img" aria-label="Four trip photos fanning out: vehicle at pickup, odometer at start, toll receipt, odometer at end">
+      <figure class="pol p1"><div class="ph" style="background:linear-gradient(160deg,#13213A,#3E7CB1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 13l2-5a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 5v5H3z M7 18v2 M17 18v2 M6 13h12"/></svg></div><figcaption>Vehicle at pickup</figcaption><time>Step 1</time></figure>
+      <figure class="pol p2"><div class="ph" style="background:linear-gradient(160deg,#3B1F4A,#C8763A)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 20a8 8 0 1 1 8-8 M12 12l4-3 M4 20h16"/></svg></div><figcaption>Odometer at start</figcaption><time>Step 2</time></figure>
+      <figure class="pol p3"><div class="ph" style="background:linear-gradient(160deg,#0F3B45,#2F7F6E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z M9 8h6 M9 12h6"/></svg></div><figcaption>Toll receipt</figcaption><time>On the way</time></figure>
+      <figure class="pol p4"><div class="ph" style="background:linear-gradient(160deg,#2A1E3D,#F2B233)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 20a8 8 0 1 1 8-8 M12 12l2 4 M4 20h16"/></svg></div><figcaption>Odometer at end</figcaption><time>Final bill</time></figure>
+    </div>
+  </div>
+</section>
+
+<section class="block reveal" id="gallery">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">Real photos · updated live</p><h2>Live gallery</h2></div><p>Photos of our vehicles and the places we drive to, posted by our team. New photos appear here the moment they're uploaded.</p></div>
+    <div class="gallery" id="galleryGrid"></div>
+  </div>
+</section>
+
+<section class="block reveal" id="pay" style="background:var(--sunk)">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">Before you book</p><h2>Payments &amp; policies</h2></div><p>A booking is confirmed only after the owner checks vehicle availability and verifies your advance payment.</p></div>
+    <div class="grid g2">
+      <div class="panel" style="padding:20px"><h3>How to pay</h3><div id="payInfo" style="margin-top:12px;display:grid;gap:10px"></div></div>
+      <div class="panel" style="padding:20px"><h3>Common questions</h3><div id="faq" style="margin-top:6px"></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="block reveal" id="trips">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">Live status</p><h2>My trips</h2></div><p>Live status, your driver and vehicle number, trip photos from the road, and the final bill on actual odometer km.</p></div>
+    <div class="panel tracker" id="trackPanel" hidden aria-live="polite"></div>
+    <div class="grid" id="tripList"></div>
+    <div id="travelTrips" hidden></div>
+  </div>
+</section>
+
+<section class="block reveal" id="account" style="background:var(--sunk)">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">Your account</p><h2>My account</h2></div><p>Your bookings, payments and trip photos are tied to your account. Only you and the business can see them.</p></div>
+    <div id="accountBody"></div>
+    <div id="prefsBody"></div>
+    <div class="panel sec-panel" id="security" hidden><div class="sec-top"><h3>Security</h3><span class="small muted">Protect your bookings, payments and personal details.</span></div><div id="securityBody"></div></div>
+  </div>
+</section>
+
+<section class="block" id="owner" hidden style="background:var(--sunk)">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">Staff only</p><h2 id="ownerTitle">Owner console</h2></div><p id="ownerSub">What you can do here depends on your role. Everything you save is what customers and the agent see.</p></div>
+    <div class="tabs" role="tablist" id="ownerTabs"></div>
+    <div id="ownerBody"></div>
+  </div>
+</section>
+
+<section class="block reveal" id="cta" style="padding-bottom:0">
+  <div class="wrap">
+    <div class="cta">
+      <svg class="badge-spin" viewBox="0 0 200 200" aria-hidden="true"><defs><path id="ctaCirc" d="M100,100 m-80,0 a80,80 0 1,1 160,0 a80,80 0 1,1 -160,0"/></defs><text fill="#F2B233" font-size="17" font-weight="700" letter-spacing="5"><textPath href="#ctaCirc">SAY WHERE · WE'LL DRIVE · SAY WHERE · WE'LL DRIVE ·</textPath></text></svg>
+      <div><h2>Your next trip is one sentence away</h2><p id="ctaLine">Talk to Saarathi now, or reach the owner under Contact.</p></div>
+      <div class="btns"><a class="btn primary" href="#book-trip">Start booking</a><a class="btn ghost" href="#agent">Ask Saarathi</a><a class="btn ghost" href="#contact">Contact the owner</a></div>
+    </div>
+  </div>
+</section>
+
+<section class="block reveal" id="contact">
+  <div class="wrap">
+    <div class="sec-head"><div><p class="eyebrow">People, not just software</p><h2>Contact the owner</h2></div><p>For anything the agent can't settle, reach the owner directly or leave a message here.</p></div>
+    <div class="grid g2">
+      <div style="display:grid;gap:16px;align-content:start"><div class="panel" style="padding:8px 20px" id="contactInfo"></div><div class="panel" style="padding:16px 20px" id="quickContact" hidden></div><div class="panel" style="padding:16px 20px" id="contactSocial" hidden></div></div>
+      <form class="panel" style="padding:20px;display:grid;gap:12px;align-content:start" id="ticketForm">
+        <h3>Leave a message</h3>
+        <div class="form-grid"><label class="f"><span>Your name</span><input id="tkName" required autocomplete="name"></label><label class="f"><span>Phone</span><input id="tkPhone" required inputmode="tel" autocomplete="tel" pattern="[0-9+ ]{10,15}"></label></div>
+        <label class="f"><span>Message</span><textarea id="tkMsg" rows="4" required></textarea></label>
+        <div class="form-actions"><span class="small muted" id="tkNote">The owner sees this in the console.</span><button class="btn primary" type="submit">Send to owner</button></div>
+        <div class="via-row" id="viaRow" hidden></div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <div class="foot-id"><div class="cube3d" aria-hidden="true"><div class="cube"><div class="cf cf1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l2-6h14l2 6v3H3z"/><circle cx="7" cy="18" r="1.6"/><circle cx="17" cy="18" r="1.6"/><path d="M5 9l1.5-3h11L19 9"/></svg></div><div class="cf cf2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 16l20-6-20-6 3 6z"/><path d="M5 10h9"/></svg></div><div class="cf cf3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2 3h-4zM9 5h6l1 4H8zM7 9h10l1 5H6zM5 14h14v7H5z"/><path d="M10 21v-4h4v4"/></svg></div><div class="cf cf4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20V6h8v14M11 10h10v10M3 20h18M6 9h2M6 13h2M14 13h4"/></svg></div><div class="cf cf5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></div><div class="cf cf6"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></div></div></div><div><b class="foot-name" id="footBrand">Sashwanth Travels</b><p class="small">Cabs, Tempo Travellers and tour trips across Tamil Nadu. Book with Saarathi, our AI agent, any time.</p></div></div>
+      <div class="soc-foot" id="footSocial" aria-label="Social media"></div>
+    </div>
+    <nav class="foot-col" aria-label="Explore"><h4>Explore</h4><a href="#top">Home</a><a href="#agent">AI agent</a><a href="#places">Destinations</a><a href="#explore">Explore Tamil Nadu</a><a href="#fleet">Fleet</a><a href="#routes">Routes &amp; stops</a><a href="#gallery">Live gallery</a></nav>
+    <nav class="foot-col" aria-label="Book and plan"><h4>Book &amp; plan</h4><a href="#book-trip">Book a trip</a><a href="#travel" id="footTravel" hidden>Flights &amp; hotels</a><a href="#planner">Trip planner &amp; budget</a><a href="#trips">My trips</a><a href="#pay">Payments &amp; policies</a></nav>
+    <nav class="foot-col" aria-label="Help"><h4>Help</h4><a href="#how">How it works</a><a href="#pay">FAQ</a><a href="#account">My account</a><a href="#contact">Contact us</a></nav>
+    <div class="foot-col"><h4>Reach us</h4><div class="foot-reach" id="footReach"></div></div>
+  </div>
+  <div class="wrap foot-bottom"><span><span id="footName">© Sashwanth Travels</span> · <span class="mono" id="siteVersion">v3.2</span></span><span>Fares are estimates until the owner confirms. Final billing on actual km.</span><a class="totop" href="#top" aria-label="Back to top"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Top</a></div>
+</footer>
+<div id="toasts" aria-live="polite"></div>
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Photo viewer">
+  <div class="lb-top"><span class="mono small" id="lbCount"></span><button class="lb-btn" type="button" id="lbClose" aria-label="Close photo viewer"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="lb-stage" id="lbStage"><button class="lb-btn lb-prev" type="button" id="lbPrev" aria-label="Previous photo"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button><div class="lb-img" id="lbImg"></div><button class="lb-btn lb-next" type="button" id="lbNext" aria-label="Next photo"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></div>
+  <div class="lb-cap" id="lbCap" aria-live="polite"></div>
+</div>
+<div class="floaters">
+  <div class="dial" id="dial"><div class="dial-list" id="dialList" role="menu"></div><button class="fl-btn fl-wa" id="dialBtn" type="button" aria-expanded="false" aria-controls="dialList" aria-label="Contact us: WhatsApp, Gmail, Instagram, call" title="Contact us"><svg class="dial-x" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2z"/></svg></button></div>
+  <div class="fl-music"><button class="fl-btn" id="musicBtn" type="button" aria-pressed="false" title="Play music"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><svg class="mnote" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg><span class="mlabel">Music</span></button><input type="range" id="musicVol" min="0" max="1" step="0.05" aria-label="Music volume" hidden></div>
+</div>
+<script src="/site.js?v=3.2.0-mvwa2xms"></script>
+</body>
+</html>
