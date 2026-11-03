@@ -307,6 +307,13 @@ The destination list and highlights are in `server/destinations.json`. The selec
 - **On the website:** published reviews appear in **What our travellers say** (`/#reviews`), with the average rating and a star breakdown. Only the first name and last initial are shown, never phone numbers. Customers can't add or publish reviews themselves.
 - **No sample reviews:** the section stays empty until real reviews are published. Please publish honest reviews, good and bad, and hide only abusive or off-topic ones.
 
+## v3.5: choose the AI for Saarathi: Claude or Google Gemini
+
+- **Claude (Anthropic):** set `ANTHROPIC_API_KEY`. For the lowest cost, set `ANTHROPIC_MODEL=claude-haiku-5-5`.
+- **Gemini (Google):** set `AI_PROVIDER=gemini` and `GEMINI_API_KEY` (aistudio.google.com → Get API key). The default model is `gemini-3.8-flash`; change it with `GEMINI_MODEL`.
+  - **Free tier:** Gemini has one, but its daily request limits are low and Google may use free-tier conversations to improve its products. Turn billing on in Google AI Studio before real customers chat.
+- **Behaviour:** the agent's tools, rules and screens are the same with either provider. `/api/health` shows `"ai":"claude"` or `"ai":"gemini"`.
+
 ## Not built yet (needs the owner's accounts or decisions)
 
 1. Opening-hours data for attractions (needs Google Places or similar).

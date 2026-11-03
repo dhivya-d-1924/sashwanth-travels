@@ -54,13 +54,19 @@ function createApp(opts = {}) {
   }
 
   /* Claude client for the agent (optional) */
+  /* AI_PROVIDER=anthropic (Claude, default) or gemini (Google). With only one key set, that provider is used. */
+  const aiEnv = opts.aiEnv || process.env;
+  const provider = String(aiEnv.AI_PROVIDER || (aiEnv.ANTHROPIC_API_KEY ? "anthropic" : aiEnv.GEMINI_API_KEY ? "gemini" : "anthropic")).toLowerCase();
   let claude = opts.claudeClient || null;
-  const model = opts.model || process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5";
-  const quickModel = opts.quickModel || process.env.ANTHROPIC_QUICK_MODEL || "claude-haiku-5-5";
-  if (!claude && process.env.ANTHROPIC_API_KEY) {
+  const useGemini = !claude && provider === "gemini" && !!aiEnv.GEMINI_API_KEY;
+  const model = opts.model || (useGemini ? aiEnv.GEMINI_MODEL || "gemini-3.8-flash" : process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5");
+  const quickModel = opts.quickModel || (useGemini ? aiEnv.GEMINI_QUICK_MODEL || aiEnv.GEMINI_MODEL || "gemini-3.8-flash" : process.env.ANTHROPIC_QUICK_MODEL || "claude-haiku-5-5");
+  if (useGemini) claude = require("./gemini").createGeminiClient({ apiKey: aiEnv.GEMINI_API_KEY, fetchImpl: opts.fetchImpl || fetch });
+  else if (!claude && aiEnv.ANTHROPIC_API_KEY) {
     const Anthropic = require("@anthropic-ai/sdk");
-    claude = new (Anthropic.default || Anthropic)({ apiKey: process.env.ANTHROPIC_API_KEY });
+    claude = new (Anthropic.default || Anthropic)({ apiKey: aiEnv.ANTHROPIC_API_KEY });
   }
+  const aiName = claude ? (claude.provider === "gemini" ? "gemini" : "claude") : null;
 
   /* ---------- users & roles ---------- */
   const roles = () => (D.docs["site/roles"] && D.docs["site/roles"].data.staff) || {};
@@ -167,7 +173,7 @@ function createApp(opts = {}) {
   const needUser = (req, res, next) => req.uid ? next() : res.status(401).json({ error: "Sign in first.", code: "not_signed_in" });
 
   /* ---------- auth ---------- */
-  app.get("/api/health", (req, res) => res.json({ ok: true, version: require("../package.json").version, agent: !!claude, owner: !!D.meta.ownerId, payments: pay.enabled, maps: geo.enabled }));
+  app.get("/api/health", (req, res) => res.json({ ok: true, version: require("../package.json").version, agent: !!claude, ai: aiName, aiModel: claude ? model : null, owner: !!D.meta.ownerId, payments: pay.enabled, maps: geo.enabled }));
   app.get("/api/session", (req, res) => res.json({ user: req.uid ? publicUser(req.uid) : null, agent: !!claude, payments: pay.enabled ? { provider: "razorpay", keyId: pay.keyId } : null, travel: (travel.enabled.flights || travel.enabled.hotels) ? travel.enabled : null, geo: geo.enabled }));
   app.post("/api/auth/signup", limit("signup", 20, 15 * 60e3), wrap(async (req, res) => {
     await ready;

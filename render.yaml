@@ -34,7 +34,9 @@ services:
         sync: false
       - key: OWNER_PASSWORD
         sync: false
-      - key: ANTHROPIC_API_KEY
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
         sync: false
       - key: RAZORPAY_KEY_ID
         sync: false
