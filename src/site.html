@@ -253,7 +253,7 @@ td input,td select{padding:.35em .5em;font-size:.88rem}
 
 footer{background:var(--hero-top);color:var(--hero-ink);padding-block:44px 120px;font-size:.88rem}
 .foot-grid{display:grid;gap:28px 24px;grid-template-columns:minmax(0,1.6fr) repeat(4,minmax(0,1fr))}
-@media (max-width:1000px){.foot-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.foot-brand{grid-column:1/-1}}
+@media (max-width:1200px){.foot-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.foot-brand{grid-column:1/-1}}
 @media (max-width:560px){.foot-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 16px}}
 .foot-id{display:flex;gap:16px;align-items:center;margin-bottom:14px}.foot-id p{margin:4px 0 0;opacity:.8;max-width:42ch}
 .foot-name{font-family:var(--f-display);font-size:1.3rem;letter-spacing:.05em;text-transform:uppercase}
@@ -439,6 +439,21 @@ body.staff-view .floaters{display:none}
 .qc img{display:block}
 .qc.sm{padding:8px 12px;border-radius:999px;font-size:.85rem}
 .qc-whatsapp{background:#1f8f4e}.qc-gmail{background:#c5372c}.qc-instagram{background:#8a3ab9}.qc-phone{background:#13213A}.qc-sms{background:#1E5E73}.qc-telegram{background:#2481cc}
+/* v3.4.2 alignment: footer contact rows and trip cards */
+.foot-reach{display:grid;gap:10px}
+.foot-reach .fr{display:grid;grid-template-columns:20px minmax(0,1fr);gap:10px;align-items:start;color:inherit;text-decoration:none;opacity:.88;line-height:1.45;font-size:.92rem}
+.foot-reach a.fr:hover,.foot-reach a.fr:focus-visible{opacity:1;color:var(--accent)}
+.foot-reach .fi{display:grid;place-items:center;width:20px;height:1.45em}.foot-reach .fi svg,.foot-reach .fi img{width:18px;height:18px}
+.foot-reach .fr>span:last-child{min-width:0;overflow-wrap:break-word;word-break:normal}
+.foot-col.reach a.fr{padding:0;justify-self:stretch}.foot-col.reach a.fr::after{display:none}.foot-col.reach a.fr:hover{transform:none}
+@media (min-width:1201px){.foot-grid{grid-template-columns:minmax(0,1.4fr) repeat(3,minmax(0,1fr)) minmax(0,1.6fr)}}
+@media (max-width:380px){.track-labels{display:none}}
+@media (max-width:1200px){.foot-col.reach{grid-column:1/-1}.foot-reach{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px 24px}}
+.trip>*,.bk>*{min-width:0}.trip-top>div{min-width:0}
+.trip>p.chip,.bk>p.chip{justify-self:start;max-width:100%;white-space:normal;line-height:1.35;margin:0}
+.trip .bk-actions,.bk .bk-actions{gap:8px;align-items:center}
+.trip .fast,.bk .fast{margin-top:0}
+@media (max-width:560px){.trip .bk-actions>.btn,.bk .bk-actions>.btn{flex:1 1 calc(50% - 8px);justify-content:center;text-align:center}.trip .ccbox .ccrow .btn{width:100%;justify-content:center}}
 /* v3.4.1 touch targets: every tappable control is at least ~40px */
 .quick button{min-height:40px;padding:.45em 1em}
 #langSel{min-height:40px}
@@ -1068,9 +1083,9 @@ body.lb-open{overflow:hidden}
     <nav class="foot-col" aria-label="Explore"><h4>Explore</h4><a href="#top">Home</a><a href="#agent">AI agent</a><a href="#places">Destinations</a><a href="#explore">Explore Tamil Nadu</a><a href="#fleet">Fleet</a><a href="#routes">Routes &amp; stops</a><a href="#gallery">Live gallery</a><a href="#reviews">Reviews</a></nav>
     <nav class="foot-col" aria-label="Book and plan"><h4>Book &amp; plan</h4><a href="#book-trip">Book a trip</a><a href="#travel" id="footTravel" hidden>Flights &amp; hotels</a><a href="#planner">Trip planner &amp; budget</a><a href="#trips">My trips</a><a href="#pay">Payments &amp; policies</a></nav>
     <nav class="foot-col" aria-label="Help"><h4>Help</h4><a href="#how">How it works</a><a href="#pay">FAQ</a><a href="#account">My account</a><a href="#contact">Contact us</a></nav>
-    <div class="foot-col"><h4>Reach us</h4><div class="foot-reach" id="footReach"></div></div>
+    <div class="foot-col reach"><h4>Reach us</h4><div class="foot-reach" id="footReach"></div></div>
   </div>
-  <div class="wrap foot-bottom"><span><span id="footName">© Sashwanth Travels</span> · <span class="mono" id="siteVersion">v3.4.1</span></span><span>Fares are estimates until the owner confirms. Final billing on actual km.</span><a class="totop" href="#top" aria-label="Back to top"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Top</a></div>
+  <div class="wrap foot-bottom"><span><span id="footName">© Sashwanth Travels</span> · <span class="mono" id="siteVersion">v3.4.2</span></span><span>Fares are estimates until the owner confirms. Final billing on actual km.</span><a class="totop" href="#top" aria-label="Back to top"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Top</a></div>
 </footer>
 <div id="toasts" aria-live="polite"></div>
 <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Photo viewer">
@@ -3113,7 +3128,9 @@ document.addEventListener("pointerleave",()=>{if(tiltEl){tiltEl.style.transform=
 
 /* ================= v3.0: footer ================= */
 function renderFooter(){
-  const F=$("#footReach");if(F){const c=cfg();F.innerHTML=`${c.phone&&telHref(c.phone)?`<a href="${esc(telHref(c.phone))}">${qcIcon("phone",16)}<span>${esc(c.phone)}</span></a>`:""}${c.email?`<a href="mailto:${esc(c.email)}">${qcIcon("gmail",16)}<span>${esc(c.email)}</span></a>`:""}${c.address?`<span class="fr-addr">${esc(c.address)}</span>`:""}${c.hours?`<span class="fr-addr">${esc(c.hours)}</span>`:""}${!c.phone&&!c.email?'<span class="fr-addr">Contact details appear here once the owner adds them.</span>':""}`}
+  const F=$("#footReach");if(F){const c=cfg(),PIN2='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>',CLK='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>';
+    const mail=esc(c.email||"").replace("@","@<wbr>");
+    F.innerHTML=`${c.phone&&telHref(c.phone)?`<a class="fr" href="${esc(telHref(c.phone))}"><span class="fi">${qcIcon("phone",18)}</span><span>${esc(c.phone)}</span></a>`:""}${c.email?`<a class="fr" href="mailto:${esc(c.email)}"><span class="fi">${qcIcon("gmail",18)}</span><span class="fmail">${mail}</span></a>`:""}${c.address?`<span class="fr"><span class="fi">${PIN2}</span><span>${esc(c.address)}</span></span>`:""}${c.hours?`<span class="fr"><span class="fi">${CLK}</span><span>${esc(c.hours)}</span></span>`:""}${!c.phone&&!c.email?'<span class="fr-addr">Contact details appear here once the owner adds them.</span>':""}`}
   const T=$("#footTravel");if(T)T.hidden=!tAvail();
 }
 

@@ -250,7 +250,7 @@ td input,td select{padding:.35em .5em;font-size:.88rem}
 
 footer{background:var(--hero-top);color:var(--hero-ink);padding-block:44px 120px;font-size:.88rem}
 .foot-grid{display:grid;gap:28px 24px;grid-template-columns:minmax(0,1.6fr) repeat(4,minmax(0,1fr))}
-@media (max-width:1000px){.foot-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.foot-brand{grid-column:1/-1}}
+@media (max-width:1200px){.foot-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.foot-brand{grid-column:1/-1}}
 @media (max-width:560px){.foot-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 16px}}
 .foot-id{display:flex;gap:16px;align-items:center;margin-bottom:14px}.foot-id p{margin:4px 0 0;opacity:.8;max-width:42ch}
 .foot-name{font-family:var(--f-display);font-size:1.3rem;letter-spacing:.05em;text-transform:uppercase}
@@ -436,6 +436,21 @@ body.staff-view .floaters{display:none}
 .qc img{display:block}
 .qc.sm{padding:8px 12px;border-radius:999px;font-size:.85rem}
 .qc-whatsapp{background:#1f8f4e}.qc-gmail{background:#c5372c}.qc-instagram{background:#8a3ab9}.qc-phone{background:#13213A}.qc-sms{background:#1E5E73}.qc-telegram{background:#2481cc}
+/* v3.4.2 alignment: footer contact rows and trip cards */
+.foot-reach{display:grid;gap:10px}
+.foot-reach .fr{display:grid;grid-template-columns:20px minmax(0,1fr);gap:10px;align-items:start;color:inherit;text-decoration:none;opacity:.88;line-height:1.45;font-size:.92rem}
+.foot-reach a.fr:hover,.foot-reach a.fr:focus-visible{opacity:1;color:var(--accent)}
+.foot-reach .fi{display:grid;place-items:center;width:20px;height:1.45em}.foot-reach .fi svg,.foot-reach .fi img{width:18px;height:18px}
+.foot-reach .fr>span:last-child{min-width:0;overflow-wrap:break-word;word-break:normal}
+.foot-col.reach a.fr{padding:0;justify-self:stretch}.foot-col.reach a.fr::after{display:none}.foot-col.reach a.fr:hover{transform:none}
+@media (min-width:1201px){.foot-grid{grid-template-columns:minmax(0,1.4fr) repeat(3,minmax(0,1fr)) minmax(0,1.6fr)}}
+@media (max-width:380px){.track-labels{display:none}}
+@media (max-width:1200px){.foot-col.reach{grid-column:1/-1}.foot-reach{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px 24px}}
+.trip>*,.bk>*{min-width:0}.trip-top>div{min-width:0}
+.trip>p.chip,.bk>p.chip{justify-self:start;max-width:100%;white-space:normal;line-height:1.35;margin:0}
+.trip .bk-actions,.bk .bk-actions{gap:8px;align-items:center}
+.trip .fast,.bk .fast{margin-top:0}
+@media (max-width:560px){.trip .bk-actions>.btn,.bk .bk-actions>.btn{flex:1 1 calc(50% - 8px);justify-content:center;text-align:center}.trip .ccbox .ccrow .btn{width:100%;justify-content:center}}
 /* v3.4.1 touch targets: every tappable control is at least ~40px */
 .quick button{min-height:40px;padding:.45em 1em}
 #langSel{min-height:40px}

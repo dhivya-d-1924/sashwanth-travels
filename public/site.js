@@ -2028,7 +2028,9 @@ document.addEventListener("pointerleave",()=>{if(tiltEl){tiltEl.style.transform=
 
 /* ================= v3.0: footer ================= */
 function renderFooter(){
-  const F=$("#footReach");if(F){const c=cfg();F.innerHTML=`${c.phone&&telHref(c.phone)?`<a href="${esc(telHref(c.phone))}">${qcIcon("phone",16)}<span>${esc(c.phone)}</span></a>`:""}${c.email?`<a href="mailto:${esc(c.email)}">${qcIcon("gmail",16)}<span>${esc(c.email)}</span></a>`:""}${c.address?`<span class="fr-addr">${esc(c.address)}</span>`:""}${c.hours?`<span class="fr-addr">${esc(c.hours)}</span>`:""}${!c.phone&&!c.email?'<span class="fr-addr">Contact details appear here once the owner adds them.</span>':""}`}
+  const F=$("#footReach");if(F){const c=cfg(),PIN2='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>',CLK='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>';
+    const mail=esc(c.email||"").replace("@","@<wbr>");
+    F.innerHTML=`${c.phone&&telHref(c.phone)?`<a class="fr" href="${esc(telHref(c.phone))}"><span class="fi">${qcIcon("phone",18)}</span><span>${esc(c.phone)}</span></a>`:""}${c.email?`<a class="fr" href="mailto:${esc(c.email)}"><span class="fi">${qcIcon("gmail",18)}</span><span class="fmail">${mail}</span></a>`:""}${c.address?`<span class="fr"><span class="fi">${PIN2}</span><span>${esc(c.address)}</span></span>`:""}${c.hours?`<span class="fr"><span class="fi">${CLK}</span><span>${esc(c.hours)}</span></span>`:""}${!c.phone&&!c.email?'<span class="fr-addr">Contact details appear here once the owner adds them.</span>':""}`}
   const T=$("#footTravel");if(T)T.hidden=!tAvail();
 }
 
