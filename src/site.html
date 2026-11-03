@@ -1085,7 +1085,7 @@ body.lb-open{overflow:hidden}
     <nav class="foot-col" aria-label="Help"><h4>Help</h4><a href="#how">How it works</a><a href="#pay">FAQ</a><a href="#account">My account</a><a href="#contact">Contact us</a></nav>
     <div class="foot-col reach"><h4>Reach us</h4><div class="foot-reach" id="footReach"></div></div>
   </div>
-  <div class="wrap foot-bottom"><span><span id="footName">© Sashwanth Travels</span> · <span class="mono" id="siteVersion">v3.5</span></span><span>Fares are estimates until the owner confirms. Final billing on actual km.</span><a class="totop" href="#top" aria-label="Back to top"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Top</a></div>
+  <div class="wrap foot-bottom"><span><span id="footName">© Sashwanth Travels</span> · <span class="mono" id="siteVersion">v3.5.2</span></span><span>Fares are estimates until the owner confirms. Final billing on actual km.</span><a class="totop" href="#top" aria-label="Back to top"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Top</a></div>
 </footer>
 <div id="toasts" aria-live="polite"></div>
 <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Photo viewer">
@@ -1981,7 +1981,7 @@ function offlineReply(q){const n=norm(q),c=cfg();
   if(/status|booking|booked|confirm|refund|hotel|flight|pnr|my trip|driver|cancel/.test(n)&&!/policy|how do i|terms/.test(n))return statusReply(q);
   if(/contact|owner|phone|call|number|whatsapp/.test(n))return`You can reach the owner at:\n- Phone: ${c.phone||"not provided yet"}\n- WhatsApp: ${c.whatsapp||"not provided yet"}\n- Email: ${c.email||"not provided yet"}`;
   if(/pay|cancel|refund|advance/.test(n))return`Payment: ${(c.paymentMethods||[]).join(", ")}. Advance ${c.advancePercent}% to hold the vehicle.\n${c.paymentTerms}\nCancellation: ${c.cancellationPolicy||"not published yet — ask the owner."}`;
-  return S.role==="owner"?"The AI agent is switched off because ANTHROPIC_API_KEY isn't set in the server's .env file. Add it from console.anthropic.com → API Keys and restart the server. Until then I can answer booking status, contacts and payment questions.":"The AI agent isn't available right now, but I can answer booking status, contact and payment questions. You can also book with the form below, or reach the owner under Contact."}
+  return S.role==="owner"?"The AI agent is switched off because no AI key reached this page. Check that .env (or Render → Environment) has AI_PROVIDER=gemini and GEMINI_API_KEY, restart the server, then reload this page with Ctrl + F5. /api/health should show \"agent\":true. Until then I can answer booking status, contacts and payment questions.":"The AI agent isn't available right now, but I can answer booking status, contact and payment questions. You can also book with the form below, or reach the owner under Contact."}
 function speak(t){if($("#speakBtn").getAttribute("aria-pressed")!=="true")return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t.replace(/[*•]/g,"").replace(/^\s*-\s/gm,"").replace(/\[.*?\]/g,"").slice(0,600));u.lang=$("#langSel").value;u.rate=1.02;speechSynthesis.speak(u)}catch{}}
 function initVoice(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition,btn=$("#micBtn");

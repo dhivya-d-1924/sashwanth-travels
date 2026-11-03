@@ -27,7 +27,7 @@ PowerShell already includes `ssh` and `scp`. Replace `SERVER_IP` with your serve
 
 ```powershell
 cd $HOME\Downloads
-scp .\sashwanth-travels-v3.5.zip root@SERVER_IP:/opt/
+scp .\sashwanth-travels-v3.5.2.zip root@SERVER_IP:/opt/
 # optional: bring your existing bookings and accounts from the PC
 scp -r C:\projects\sashwanth-travels\data root@SERVER_IP:/opt/data-from-pc
 ssh root@SERVER_IP
@@ -37,7 +37,7 @@ Then, on the server:
 
 ```sh
 apt-get update && apt-get install -y unzip
-cd /opt && unzip -o sashwanth-travels-v3.5.zip
+cd /opt && unzip -o sashwanth-travels-v3.5.2.zip
 cd /opt/sashwanth-travels
 [ -d /opt/data-from-pc ] && cp -r /opt/data-from-pc ./data
 sh deploy/setup-server.sh

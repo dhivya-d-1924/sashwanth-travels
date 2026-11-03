@@ -38,7 +38,7 @@ test("Gemini adapter: tools, function calls with thought signatures, tool result
 });
 
 test("Gemini errors: rate limit passes through as 429; empty or blocked answers get a polite reply", async () => {
-  const g429 = createGeminiClient({ apiKey: "k", fetchImpl: async () => ({ ok: false, status: 429, json: async () => ({ error: { message: "Quota exceeded" } }) }) });
+  const g429 = createGeminiClient({ apiKey: "k", retryDelayMs: 0, log: {}, fetchImpl: async () => ({ ok: false, status: 429, json: async () => ({ error: { message: "Quota exceeded" } }) }) });
   await assert.rejects(g429.messages.create({ model: "m", messages: [{ role: "user", content: "hi" }] }), e => e.status === 429);
   const gs = createGeminiClient({ apiKey: "k", fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ candidates: [{ finishReason: "SAFETY", content: { parts: [] } }] }) }) });
   const r = await gs.messages.create({ model: "m", messages: [{ role: "user", content: "hi" }] });
@@ -61,4 +61,21 @@ test("server: AI_PROVIDER=gemini runs the agent on Gemini and health says so", a
     const j = await r.json();
     assert.equal(r.status, 200); assert.match(j.content[0].text, /Vanakkam/);
   } finally { app.locals.store.flushNow(); server.closeAllConnections(); await new Promise(r => server.close(r)); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("Gemini busy (503) or slow: retries, then falls back to another model and answers", async () => {
+  const seen = [];
+  const fetchImpl = async (url) => {
+    const m = /models\/([^:]+):/.exec(url)[1]; seen.push(m);
+    if (m === "gemini-3.8-flash") return { ok: false, status: 503, json: async () => ({ error: { message: "This model is currently experiencing high demand." } }) };
+    return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: "Hello from " + m }] }, finishReason: "STOP" }] }) };
+  };
+  const g = createGeminiClient({ apiKey: "k", fetchImpl, retryDelayMs: 0, log: {} });
+  const r = await g.messages.create({ model: "gemini-3.8-flash", messages: [{ role: "user", content: "hi" }] });
+  assert.deepEqual(seen, ["gemini-3.8-flash", "gemini-3.8-flash", "gemini-3.6-flash"]);
+  assert.match(r.content[0].text, /Hello from gemini-3.6-flash/);
+  /* a bad key is not retried */
+  let n = 0; const bad = createGeminiClient({ apiKey: "k", retryDelayMs: 0, log: {}, fetchImpl: async () => { n++; return { ok: false, status: 400, json: async () => ({ error: { message: "API key not valid" } }) }; } });
+  await assert.rejects(bad.messages.create({ model: "m", messages: [{ role: "user", content: "hi" }] }), /API key not valid/);
+  assert.equal(n, 1);
 });

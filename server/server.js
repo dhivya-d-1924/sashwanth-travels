@@ -61,7 +61,7 @@ function createApp(opts = {}) {
   const useGemini = !claude && provider === "gemini" && !!aiEnv.GEMINI_API_KEY;
   const model = opts.model || (useGemini ? aiEnv.GEMINI_MODEL || "gemini-3.8-flash" : process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5");
   const quickModel = opts.quickModel || (useGemini ? aiEnv.GEMINI_QUICK_MODEL || aiEnv.GEMINI_MODEL || "gemini-3.8-flash" : process.env.ANTHROPIC_QUICK_MODEL || "claude-haiku-5-5");
-  if (useGemini) claude = require("./gemini").createGeminiClient({ apiKey: aiEnv.GEMINI_API_KEY, fetchImpl: opts.fetchImpl || fetch });
+  if (useGemini) claude = require("./gemini").createGeminiClient({ apiKey: aiEnv.GEMINI_API_KEY, fetchImpl: opts.fetchImpl || fetch, retryDelayMs: opts.aiRetryMs ?? 1200, fallbacks: String(aiEnv.GEMINI_FALLBACK_MODELS || "gemini-3.6-flash,gemini-3.5-flash-lite").split(",").map(x => x.trim()).filter(Boolean) });
   else if (!claude && aiEnv.ANTHROPIC_API_KEY) {
     const Anthropic = require("@anthropic-ai/sdk");
     claude = new (Anthropic.default || Anthropic)({ apiKey: aiEnv.ANTHROPIC_API_KEY });
@@ -450,7 +450,7 @@ function createApp(opts = {}) {
       res.json({ content: r.content, stop_reason: r.stop_reason });
     } catch (e) {
       console.error("[llm]", e.status || "", e.message);
-      res.status(e.status === 429 ? 429 : 502).json({ error: "The agent couldn't answer just now.", code: e.status === 429 ? "rate_limited" : "upstream_error" });
+      const busy = e.status === 429 || e.status === 503 || e.timeout; res.status(busy ? 429 : 502).json({ error: busy ? "The AI service is busy right now." : "The agent couldn't answer just now.", code: busy ? "rate_limited" : "upstream_error" });
     }
   }));
 
