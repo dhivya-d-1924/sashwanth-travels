@@ -329,6 +329,7 @@ html,body{overflow-x:clip}
 .ggrid-admin img{width:100%;height:130px;object-fit:cover}
 .ggrid-admin figcaption,.ggrid-admin button{margin:0 8px;font-size:.82rem}
 .track.t5,.track-labels.t5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.track-labels span{min-width:0;overflow-wrap:anywhere;hyphens:auto}@media (max-width:420px){.track-labels{font-size:.64rem;letter-spacing:-.01em}}
 
 body.checkout [data-ckhide]{display:none!important}
 body.checkout.ck-travel #book{display:none!important}
@@ -394,6 +395,8 @@ body.checkout .floaters{display:none}
 .fl-btn:hover{transform:translateY(-3px)}
 .fl-wa{background:#1f8f4e;padding:0;justify-content:center;width:52px;height:52px}
 .fl-music{display:flex;align-items:center;gap:8px}
+.fl-music .mlabel{display:none}
+.floaters{transition:opacity .25s,transform .25s}.floaters.fl-away{opacity:0;transform:translateY(20px);pointer-events:none}#musicBtn{width:48px;height:48px;padding:0;justify-content:center}
 #musicVol{width:110px;accent-color:var(--accent)}
 #musicBtn .eq{display:none;gap:2px;align-items:flex-end;height:18px}#musicBtn .eq i{display:block;width:3px;background:var(--accent);border-radius:2px;animation:eq 1s ease-in-out infinite}
 #musicBtn .eq i:nth-child(2){animation-delay:.2s}#musicBtn .eq i:nth-child(3){animation-delay:.4s}
@@ -433,6 +436,11 @@ body.staff-view .floaters{display:none}
 .qc img{display:block}
 .qc.sm{padding:8px 12px;border-radius:999px;font-size:.85rem}
 .qc-whatsapp{background:#1f8f4e}.qc-gmail{background:#c5372c}.qc-instagram{background:#8a3ab9}.qc-phone{background:#13213A}.qc-sms{background:#1E5E73}.qc-telegram{background:#2481cc}
+/* v3.4.1 touch targets: every tappable control is at least ~40px */
+.quick button{min-height:40px;padding:.45em 1em}
+#langSel{min-height:40px}
+.cdots.cdots{gap:0}.cdots .cdot{box-sizing:content-box;padding:15px 5px;background-clip:content-box}
+.locbtn{min-height:32px;padding:4px 2px}
 /* v3.4 ratings & reviews */
 .sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .stars{display:inline-flex;gap:2px;color:#E3A008;vertical-align:middle}.stars svg{width:var(--ss,18px);height:var(--ss,18px)}.stars .off{color:color-mix(in srgb,var(--muted) 45%,transparent)}
@@ -465,12 +473,16 @@ body.staff-view .floaters{display:none}
 .ccdiff s{color:var(--muted)}
 
 .qc:hover,.qc:focus-visible{filter:brightness(1.08)}
+.qc.ic{width:52px;height:52px;padding:0;border-radius:50%;flex:none;transition:transform .2s,filter .2s}.qc.ic:hover,.qc.ic:focus-visible{transform:translateY(-3px)}
+.qc-row{grid-template-columns:none!important;display:flex!important;flex-wrap:wrap;gap:12px}
+.fast .qc.ic{width:46px;height:46px;min-height:0;flex:none}
+.via-row .qc.ic{width:44px;height:44px}
 .via-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px dashed var(--line);padding-top:12px}
 /* speed dial */
 .dial{position:relative;display:grid;justify-items:start;gap:8px}
 .dial-list{display:grid;gap:8px;justify-items:start;max-height:0;overflow:hidden;opacity:0;transform:translateY(10px);transition:max-height .3s,opacity .25s,transform .3s}
 .dial.open .dial-list{max-height:320px;opacity:1;transform:none;overflow:visible}
-.dial-i{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 14px 0 11px;border-radius:999px;color:#fff;text-decoration:none;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,.25);transition:transform .2s}
+.dial-i{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:48px;height:48px;padding:0;border-radius:50%;color:#fff;text-decoration:none;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,.25);transition:transform .2s}
 .dial-i:hover{transform:translateX(4px)}
 .dial .dial-x{display:none}.dial.open .dial-x{display:block}.dial.open #dialBtn>svg:not(.dial-x){display:none}
 /* inline form errors */

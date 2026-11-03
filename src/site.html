@@ -332,6 +332,7 @@ html,body{overflow-x:clip}
 .ggrid-admin img{width:100%;height:130px;object-fit:cover}
 .ggrid-admin figcaption,.ggrid-admin button{margin:0 8px;font-size:.82rem}
 .track.t5,.track-labels.t5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.track-labels span{min-width:0;overflow-wrap:anywhere;hyphens:auto}@media (max-width:420px){.track-labels{font-size:.64rem;letter-spacing:-.01em}}
 
 body.checkout [data-ckhide]{display:none!important}
 body.checkout.ck-travel #book{display:none!important}
@@ -397,6 +398,8 @@ body.checkout .floaters{display:none}
 .fl-btn:hover{transform:translateY(-3px)}
 .fl-wa{background:#1f8f4e;padding:0;justify-content:center;width:52px;height:52px}
 .fl-music{display:flex;align-items:center;gap:8px}
+.fl-music .mlabel{display:none}
+.floaters{transition:opacity .25s,transform .25s}.floaters.fl-away{opacity:0;transform:translateY(20px);pointer-events:none}#musicBtn{width:48px;height:48px;padding:0;justify-content:center}
 #musicVol{width:110px;accent-color:var(--accent)}
 #musicBtn .eq{display:none;gap:2px;align-items:flex-end;height:18px}#musicBtn .eq i{display:block;width:3px;background:var(--accent);border-radius:2px;animation:eq 1s ease-in-out infinite}
 #musicBtn .eq i:nth-child(2){animation-delay:.2s}#musicBtn .eq i:nth-child(3){animation-delay:.4s}
@@ -436,6 +439,11 @@ body.staff-view .floaters{display:none}
 .qc img{display:block}
 .qc.sm{padding:8px 12px;border-radius:999px;font-size:.85rem}
 .qc-whatsapp{background:#1f8f4e}.qc-gmail{background:#c5372c}.qc-instagram{background:#8a3ab9}.qc-phone{background:#13213A}.qc-sms{background:#1E5E73}.qc-telegram{background:#2481cc}
+/* v3.4.1 touch targets: every tappable control is at least ~40px */
+.quick button{min-height:40px;padding:.45em 1em}
+#langSel{min-height:40px}
+.cdots.cdots{gap:0}.cdots .cdot{box-sizing:content-box;padding:15px 5px;background-clip:content-box}
+.locbtn{min-height:32px;padding:4px 2px}
 /* v3.4 ratings & reviews */
 .sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .stars{display:inline-flex;gap:2px;color:#E3A008;vertical-align:middle}.stars svg{width:var(--ss,18px);height:var(--ss,18px)}.stars .off{color:color-mix(in srgb,var(--muted) 45%,transparent)}
@@ -468,12 +476,16 @@ body.staff-view .floaters{display:none}
 .ccdiff s{color:var(--muted)}
 
 .qc:hover,.qc:focus-visible{filter:brightness(1.08)}
+.qc.ic{width:52px;height:52px;padding:0;border-radius:50%;flex:none;transition:transform .2s,filter .2s}.qc.ic:hover,.qc.ic:focus-visible{transform:translateY(-3px)}
+.qc-row{grid-template-columns:none!important;display:flex!important;flex-wrap:wrap;gap:12px}
+.fast .qc.ic{width:46px;height:46px;min-height:0;flex:none}
+.via-row .qc.ic{width:44px;height:44px}
 .via-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px dashed var(--line);padding-top:12px}
 /* speed dial */
 .dial{position:relative;display:grid;justify-items:start;gap:8px}
 .dial-list{display:grid;gap:8px;justify-items:start;max-height:0;overflow:hidden;opacity:0;transform:translateY(10px);transition:max-height .3s,opacity .25s,transform .3s}
 .dial.open .dial-list{max-height:320px;opacity:1;transform:none;overflow:visible}
-.dial-i{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 14px 0 11px;border-radius:999px;color:#fff;text-decoration:none;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,.25);transition:transform .2s}
+.dial-i{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:48px;height:48px;padding:0;border-radius:50%;color:#fff;text-decoration:none;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,.25);transition:transform .2s}
 .dial-i:hover{transform:translateX(4px)}
 .dial .dial-x{display:none}.dial.open .dial-x{display:block}.dial.open #dialBtn>svg:not(.dial-x){display:none}
 /* inline form errors */
@@ -1058,7 +1070,7 @@ body.lb-open{overflow:hidden}
     <nav class="foot-col" aria-label="Help"><h4>Help</h4><a href="#how">How it works</a><a href="#pay">FAQ</a><a href="#account">My account</a><a href="#contact">Contact us</a></nav>
     <div class="foot-col"><h4>Reach us</h4><div class="foot-reach" id="footReach"></div></div>
   </div>
-  <div class="wrap foot-bottom"><span><span id="footName">© Sashwanth Travels</span> · <span class="mono" id="siteVersion">v3.4</span></span><span>Fares are estimates until the owner confirms. Final billing on actual km.</span><a class="totop" href="#top" aria-label="Back to top"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Top</a></div>
+  <div class="wrap foot-bottom"><span><span id="footName">© Sashwanth Travels</span> · <span class="mono" id="siteVersion">v3.4.1</span></span><span>Fares are estimates until the owner confirms. Final billing on actual km.</span><a class="totop" href="#top" aria-label="Back to top"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Top</a></div>
 </footer>
 <div id="toasts" aria-live="polite"></div>
 <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Photo viewer">
@@ -1068,7 +1080,7 @@ body.lb-open{overflow:hidden}
 </div>
 <div class="floaters">
   <div class="dial" id="dial"><div class="dial-list" id="dialList" role="menu"></div><button class="fl-btn fl-wa" id="dialBtn" type="button" aria-expanded="false" aria-controls="dialList" aria-label="Contact us: WhatsApp, Gmail, Instagram, call" title="Contact us"><svg class="dial-x" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2z"/></svg></button></div>
-  <div class="fl-music"><button class="fl-btn" id="musicBtn" type="button" aria-pressed="false" title="Play music"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><svg class="mnote" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg><span class="mlabel">Music</span></button><input type="range" id="musicVol" min="0" max="1" step="0.05" aria-label="Music volume" hidden></div>
+  <div class="fl-music"><button class="fl-btn" id="musicBtn" type="button" aria-pressed="false" title="Play music" aria-label="Music"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><svg class="mnote" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg><span class="mlabel">Music</span></button><input type="range" id="musicVol" min="0" max="1" step="0.05" aria-label="Music volume" hidden></div>
 </div>
 
 <script>
@@ -1584,7 +1596,7 @@ function renderPay(){
 }
 const contactRows=()=>{const c=cfg();return[["Phone",c.phone],["WhatsApp",c.whatsapp],["Email",c.email],["Office",c.address],["Hours",c.hours]]};
 function renderContact(){
-  $("#contactInfo").innerHTML=contactRows().map(([k,v],i)=>`<div class="contact-row"><div style="min-width:0"><div class="eyebrow">${k}</div>${v?`<span class="v">${esc(v)}</span>`:'<span class="muted">Not provided yet</span>'}</div>${v?`<button class="btn sm" data-copyrow="${i}">Copy</button>`:""}</div>`).join("")+(cfg().whatsapp?`<div class="contact-row"><span class="small muted">Open a WhatsApp chat (may not open inside some viewers)</span><a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/${esc(String(cfg().whatsapp).replace(/\D/g,""))}">WhatsApp</a></div>`:"");
+  $("#contactInfo").innerHTML=contactRows().map(([k,v],i)=>`<div class="contact-row"><div style="min-width:0"><div class="eyebrow">${k}</div>${v?`<span class="v">${esc(v)}</span>`:'<span class="muted">Not provided yet</span>'}</div>${v?`<button class="btn sm" data-copyrow="${i}">Copy</button>`:""}</div>`).join("")+(cfg().whatsapp&&waHrefTo(cfg().whatsapp)?`<div class="contact-row"><span class="small muted">Chat with us on WhatsApp</span><a class="qc ic qc-whatsapp" target="_blank" rel="noopener noreferrer" href="${esc(waHrefTo(cfg().whatsapp))}" aria-label="WhatsApp" title="WhatsApp">${qcIcon("whatsapp",22)}</a></div>`:"");
 }
 
 /* ================= account ================= */
@@ -2893,7 +2905,7 @@ async function setMusic(on){
 }
 function renderMusic(){
   const B=$("#musicBtn");if(!B)return;B.setAttribute("aria-pressed",String(MUSIC.on));B.classList.toggle("on",MUSIC.on);
-  B.title=MUSIC.on?"Pause music":"Play music";B.querySelector(".mlabel").textContent=MUSIC.on?"Music on":"Music";
+  B.title=MUSIC.on?"Pause music":"Play music";B.setAttribute("aria-label",MUSIC.on?"Pause music":"Play music");B.querySelector(".mlabel").textContent=MUSIC.on?"Music on":"Music";
   const V=$("#musicVol");if(V){V.hidden=!MUSIC.on;V.value=String(MUSIC.vol)}
   $$("[data-music] span").forEach(x=>x.textContent=MUSIC.on?"Music: on":"Music: off");
   document.body.classList.toggle("staff-view",isStaff());
@@ -3010,7 +3022,7 @@ function smsHref(p,text){const d=phoneDigits(p);return d?`sms:+${d}${text?`?&bod
 function waHrefTo(p,text){const d=phoneDigits(p);return d?`https://wa.me/${d}${text?`?text=${encodeURIComponent(text)}`:""}`:""}
 function fastContact(phone,text,label){
   const call=telHref(phone),wa=waHrefTo(phone,text),sms=smsHref(phone,text);if(!call&&!wa)return"";
-  return`<div class="fast" role="group" aria-label="${esc(label)}"><span class="lbl">${esc(label)}</span>${call?`<a class="qc qc-phone" href="${esc(call)}">${qcIcon("phone",18)}<span>Call</span></a>`:""}${wa?`<a class="qc qc-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener noreferrer">${qcIcon("whatsapp",18)}<span>WhatsApp</span></a>`:""}${sms?`<a class="qc qc-sms" href="${esc(sms)}">${qcIcon("sms",18)}<span>SMS</span></a>`:""}</div>`}
+  return`<div class="fast" role="group" aria-label="${esc(label)}"><span class="lbl">${esc(label)}</span>${call?`<a class="qc ic qc-phone" href="${esc(call)}" aria-label="Call" title="Call">${qcIcon("phone",22)}</a>`:""}${wa?`<a class="qc ic qc-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" title="WhatsApp">${qcIcon("whatsapp",22)}</a>`:""}${sms?`<a class="qc ic qc-sms" href="${esc(sms)}" aria-label="SMS" title="SMS">${qcIcon("sms",22)}</a>`:""}</div>`}
 const ccPending=b=>!!(b.contactChange&&b.contactChange.id&&!(b.contactDecision&&b.contactDecision.reqId===b.contactChange.id));
 const CC_OPEN=["awaiting_payment","payment_submitted","changes_requested","confirmed"];
 /* Customer: the name and phone on a booking change only after the owner approves. */
@@ -3068,9 +3080,9 @@ function channelLinks(text,subject){
   return out;
 }
 function renderContactQuick(){
-  const Q=$("#quickContact");if(Q){const ch=channelLinks();Q.innerHTML=ch.length?`<div class="eyebrow" style="margin-bottom:8px">Ask us instantly</div><div class="qc-row">${ch.map(x=>`<a class="qc qc-${x.k}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} data-qc="${x.k}">${qcIcon(x.k,22)}<span>${esc(x.l)}</span></a>`).join("")}</div>${ch.some(x=>x.sample)?'<p class="small muted" style="margin-top:8px">Sample buttons. They work once the owner adds the WhatsApp number, email and Instagram link in Business setup.</p>':""}`:"";Q.hidden=!ch.length}
-  const V=$("#viaRow");if(V){const ch=channelLinks().filter(x=>!["phone","sms"].includes(x.k)&&!x.sample);V.hidden=!ch.length;V.innerHTML=ch.length?`<span class="small muted">or send this query by</span>${ch.map(x=>`<button type="button" class="qc qc-${x.k} sm" data-via="${x.k}">${qcIcon(x.k,18)}<span>${esc(x.l)}</span></button>`).join("")}`:""}
-  const D=$("#dialList");if(D){const ch=channelLinks();D.innerHTML=ch.map(x=>`<a class="dial-i qc-${x.k}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} aria-label="${esc(x.l)}" title="${esc(x.l)}">${qcIcon(x.k,22)}<span>${esc(x.l)}</span></a>`).join("");$("#dialBtn").hidden=!ch.length}
+  const Q=$("#quickContact");if(Q){const ch=channelLinks();Q.innerHTML=ch.length?`<div class="eyebrow" style="margin-bottom:8px">Ask us instantly</div><div class="qc-row">${ch.map(x=>`<a class="qc ic qc-${x.k}" aria-label="${esc(x.l)}" title="${esc(x.l)}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} data-qc="${x.k}">${qcIcon(x.k,24)}</a>`).join("")}</div>${ch.some(x=>x.sample)?'<p class="small muted" style="margin-top:8px">Sample buttons. They work once the owner adds the WhatsApp number, email and Instagram link in Business setup.</p>':""}`:"";Q.hidden=!ch.length}
+  const V=$("#viaRow");if(V){const ch=channelLinks().filter(x=>!["phone","sms"].includes(x.k)&&!x.sample);V.hidden=!ch.length;V.innerHTML=ch.length?`<span class="small muted">or send this query by</span>${ch.map(x=>`<button type="button" class="qc ic qc-${x.k}" data-via="${x.k}" aria-label="Send by ${esc(x.l)}" title="Send by ${esc(x.l)}">${qcIcon(x.k,22)}</button>`).join("")}`:""}
+  const D=$("#dialList");if(D){const ch=channelLinks();D.innerHTML=ch.map(x=>`<a class="dial-i qc-${x.k}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} aria-label="${esc(x.l)}" title="${esc(x.l)}">${qcIcon(x.k,22)}</a>`).join("");$("#dialBtn").hidden=!ch.length}
 }
 async function sendVia(kind){
   const f=$("#ticketForm");if(!validateIn(f))return;
@@ -3669,6 +3681,11 @@ document.addEventListener("submit",async e=>{if(e.target.id!=="phAdd")return;e.p
   catch(err){toast(err.message,true)}finally{btn.disabled=false}
 });
 
+/* Floating WhatsApp/music buttons hide while the footer or on-page contact buttons are on screen, so they never cover them. */
+let flRaf=0;function flCheck(){flRaf=0;const F=document.querySelector(".floaters");if(!F)return;const H=innerHeight,zone=H-140;
+  const hit=[...document.querySelectorAll("footer,.fast,#quickContact,.via-row,.ccbox,.revbox")].some(el=>{if(el.closest("[hidden]"))return false;const r=el.getBoundingClientRect();return r.height&&r.bottom>zone&&r.top<H});
+  F.classList.toggle("fl-away",hit)}
+addEventListener("scroll",()=>{if(!flRaf)flRaf=requestAnimationFrame(flCheck)},{passive:true});addEventListener("resize",()=>{if(!flRaf)flRaf=requestAnimationFrame(flCheck)});
 /* ================= v3.4: ratings & reviews =================
    Only customers with a completed trip can review it (checked by the server). The owner publishes each review
    (and may reply); published reviews are copied to the public document site/reviews without phone numbers or full names. */

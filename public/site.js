@@ -511,7 +511,7 @@ function renderPay(){
 }
 const contactRows=()=>{const c=cfg();return[["Phone",c.phone],["WhatsApp",c.whatsapp],["Email",c.email],["Office",c.address],["Hours",c.hours]]};
 function renderContact(){
-  $("#contactInfo").innerHTML=contactRows().map(([k,v],i)=>`<div class="contact-row"><div style="min-width:0"><div class="eyebrow">${k}</div>${v?`<span class="v">${esc(v)}</span>`:'<span class="muted">Not provided yet</span>'}</div>${v?`<button class="btn sm" data-copyrow="${i}">Copy</button>`:""}</div>`).join("")+(cfg().whatsapp?`<div class="contact-row"><span class="small muted">Open a WhatsApp chat (may not open inside some viewers)</span><a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/${esc(String(cfg().whatsapp).replace(/\D/g,""))}">WhatsApp</a></div>`:"");
+  $("#contactInfo").innerHTML=contactRows().map(([k,v],i)=>`<div class="contact-row"><div style="min-width:0"><div class="eyebrow">${k}</div>${v?`<span class="v">${esc(v)}</span>`:'<span class="muted">Not provided yet</span>'}</div>${v?`<button class="btn sm" data-copyrow="${i}">Copy</button>`:""}</div>`).join("")+(cfg().whatsapp&&waHrefTo(cfg().whatsapp)?`<div class="contact-row"><span class="small muted">Chat with us on WhatsApp</span><a class="qc ic qc-whatsapp" target="_blank" rel="noopener noreferrer" href="${esc(waHrefTo(cfg().whatsapp))}" aria-label="WhatsApp" title="WhatsApp">${qcIcon("whatsapp",22)}</a></div>`:"");
 }
 
 /* ================= account ================= */
@@ -1820,7 +1820,7 @@ async function setMusic(on){
 }
 function renderMusic(){
   const B=$("#musicBtn");if(!B)return;B.setAttribute("aria-pressed",String(MUSIC.on));B.classList.toggle("on",MUSIC.on);
-  B.title=MUSIC.on?"Pause music":"Play music";B.querySelector(".mlabel").textContent=MUSIC.on?"Music on":"Music";
+  B.title=MUSIC.on?"Pause music":"Play music";B.setAttribute("aria-label",MUSIC.on?"Pause music":"Play music");B.querySelector(".mlabel").textContent=MUSIC.on?"Music on":"Music";
   const V=$("#musicVol");if(V){V.hidden=!MUSIC.on;V.value=String(MUSIC.vol)}
   $$("[data-music] span").forEach(x=>x.textContent=MUSIC.on?"Music: on":"Music: off");
   document.body.classList.toggle("staff-view",isStaff());
@@ -1937,7 +1937,7 @@ function smsHref(p,text){const d=phoneDigits(p);return d?`sms:+${d}${text?`?&bod
 function waHrefTo(p,text){const d=phoneDigits(p);return d?`https://wa.me/${d}${text?`?text=${encodeURIComponent(text)}`:""}`:""}
 function fastContact(phone,text,label){
   const call=telHref(phone),wa=waHrefTo(phone,text),sms=smsHref(phone,text);if(!call&&!wa)return"";
-  return`<div class="fast" role="group" aria-label="${esc(label)}"><span class="lbl">${esc(label)}</span>${call?`<a class="qc qc-phone" href="${esc(call)}">${qcIcon("phone",18)}<span>Call</span></a>`:""}${wa?`<a class="qc qc-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener noreferrer">${qcIcon("whatsapp",18)}<span>WhatsApp</span></a>`:""}${sms?`<a class="qc qc-sms" href="${esc(sms)}">${qcIcon("sms",18)}<span>SMS</span></a>`:""}</div>`}
+  return`<div class="fast" role="group" aria-label="${esc(label)}"><span class="lbl">${esc(label)}</span>${call?`<a class="qc ic qc-phone" href="${esc(call)}" aria-label="Call" title="Call">${qcIcon("phone",22)}</a>`:""}${wa?`<a class="qc ic qc-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" title="WhatsApp">${qcIcon("whatsapp",22)}</a>`:""}${sms?`<a class="qc ic qc-sms" href="${esc(sms)}" aria-label="SMS" title="SMS">${qcIcon("sms",22)}</a>`:""}</div>`}
 const ccPending=b=>!!(b.contactChange&&b.contactChange.id&&!(b.contactDecision&&b.contactDecision.reqId===b.contactChange.id));
 const CC_OPEN=["awaiting_payment","payment_submitted","changes_requested","confirmed"];
 /* Customer: the name and phone on a booking change only after the owner approves. */
@@ -1995,9 +1995,9 @@ function channelLinks(text,subject){
   return out;
 }
 function renderContactQuick(){
-  const Q=$("#quickContact");if(Q){const ch=channelLinks();Q.innerHTML=ch.length?`<div class="eyebrow" style="margin-bottom:8px">Ask us instantly</div><div class="qc-row">${ch.map(x=>`<a class="qc qc-${x.k}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} data-qc="${x.k}">${qcIcon(x.k,22)}<span>${esc(x.l)}</span></a>`).join("")}</div>${ch.some(x=>x.sample)?'<p class="small muted" style="margin-top:8px">Sample buttons. They work once the owner adds the WhatsApp number, email and Instagram link in Business setup.</p>':""}`:"";Q.hidden=!ch.length}
-  const V=$("#viaRow");if(V){const ch=channelLinks().filter(x=>!["phone","sms"].includes(x.k)&&!x.sample);V.hidden=!ch.length;V.innerHTML=ch.length?`<span class="small muted">or send this query by</span>${ch.map(x=>`<button type="button" class="qc qc-${x.k} sm" data-via="${x.k}">${qcIcon(x.k,18)}<span>${esc(x.l)}</span></button>`).join("")}`:""}
-  const D=$("#dialList");if(D){const ch=channelLinks();D.innerHTML=ch.map(x=>`<a class="dial-i qc-${x.k}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} aria-label="${esc(x.l)}" title="${esc(x.l)}">${qcIcon(x.k,22)}<span>${esc(x.l)}</span></a>`).join("");$("#dialBtn").hidden=!ch.length}
+  const Q=$("#quickContact");if(Q){const ch=channelLinks();Q.innerHTML=ch.length?`<div class="eyebrow" style="margin-bottom:8px">Ask us instantly</div><div class="qc-row">${ch.map(x=>`<a class="qc ic qc-${x.k}" aria-label="${esc(x.l)}" title="${esc(x.l)}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} data-qc="${x.k}">${qcIcon(x.k,24)}</a>`).join("")}</div>${ch.some(x=>x.sample)?'<p class="small muted" style="margin-top:8px">Sample buttons. They work once the owner adds the WhatsApp number, email and Instagram link in Business setup.</p>':""}`:"";Q.hidden=!ch.length}
+  const V=$("#viaRow");if(V){const ch=channelLinks().filter(x=>!["phone","sms"].includes(x.k)&&!x.sample);V.hidden=!ch.length;V.innerHTML=ch.length?`<span class="small muted">or send this query by</span>${ch.map(x=>`<button type="button" class="qc ic qc-${x.k}" data-via="${x.k}" aria-label="Send by ${esc(x.l)}" title="Send by ${esc(x.l)}">${qcIcon(x.k,22)}</button>`).join("")}`:""}
+  const D=$("#dialList");if(D){const ch=channelLinks();D.innerHTML=ch.map(x=>`<a class="dial-i qc-${x.k}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} aria-label="${esc(x.l)}" title="${esc(x.l)}">${qcIcon(x.k,22)}</a>`).join("");$("#dialBtn").hidden=!ch.length}
 }
 async function sendVia(kind){
   const f=$("#ticketForm");if(!validateIn(f))return;
@@ -2596,6 +2596,11 @@ document.addEventListener("submit",async e=>{if(e.target.id!=="phAdd")return;e.p
   catch(err){toast(err.message,true)}finally{btn.disabled=false}
 });
 
+/* Floating WhatsApp/music buttons hide while the footer or on-page contact buttons are on screen, so they never cover them. */
+let flRaf=0;function flCheck(){flRaf=0;const F=document.querySelector(".floaters");if(!F)return;const H=innerHeight,zone=H-140;
+  const hit=[...document.querySelectorAll("footer,.fast,#quickContact,.via-row,.ccbox,.revbox")].some(el=>{if(el.closest("[hidden]"))return false;const r=el.getBoundingClientRect();return r.height&&r.bottom>zone&&r.top<H});
+  F.classList.toggle("fl-away",hit)}
+addEventListener("scroll",()=>{if(!flRaf)flRaf=requestAnimationFrame(flCheck)},{passive:true});addEventListener("resize",()=>{if(!flRaf)flRaf=requestAnimationFrame(flCheck)});
 /* ================= v3.4: ratings & reviews =================
    Only customers with a completed trip can review it (checked by the server). The owner publishes each review
    (and may reply); published reviews are copied to the public document site/reviews without phone numbers or full names. */
