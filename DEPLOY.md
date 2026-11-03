@@ -27,7 +27,7 @@ PowerShell already includes `ssh` and `scp`. Replace `SERVER_IP` with your serve
 
 ```powershell
 cd $HOME\Downloads
-scp .\sashwanth-travels-v3.2.zip root@SERVER_IP:/opt/
+scp .\sashwanth-travels-v3.4.zip root@SERVER_IP:/opt/
 # optional: bring your existing bookings and accounts from the PC
 scp -r C:\projects\sashwanth-travels\data root@SERVER_IP:/opt/data-from-pc
 ssh root@SERVER_IP
@@ -37,7 +37,7 @@ Then, on the server:
 
 ```sh
 apt-get update && apt-get install -y unzip
-cd /opt && unzip -o sashwanth-travels-v3.2.zip
+cd /opt && unzip -o sashwanth-travels-v3.4.zip
 cd /opt/sashwanth-travels
 [ -d /opt/data-from-pc ] && cp -r /opt/data-from-pc ./data
 sh deploy/setup-server.sh
@@ -118,3 +118,18 @@ cd /opt/sashwanth-travels && docker compose up -d --build
 | Site loads but data is missing | You started without copying `data/` from the PC; copy it in and run `docker compose restart app` |
 | Changed `.env` but nothing changed | Run `docker compose up -d` (a restart alone doesn't reload `.env`) |
 | See errors | `docker compose logs --tail 100 app` |
+
+---
+
+# Alternative: Render (no server to manage)
+
+Render runs the site for you; you don't log in to a Linux server. You still need the **paid Starter plan with a disk**. On the free plan the site sleeps after 15 minutes of no visitors and has no disk, so every account and booking would be lost at each restart and deploy. Vercel doesn't work for this site: it runs code only briefly per request, has no disk, and can't keep reminders, alarms, live updates or photo collection running.
+
+1. Put the project on **GitHub** (a private repository). `.gitignore` keeps `.env`, `data/` and `node_modules/` out.
+2. Render → **New → Blueprint** → connect GitHub → pick the repository. `render.yaml` sets up the service, a 1 GB disk at `/var/data`, the build and start commands, and the health check.
+3. Fill in the secret values it asks for: `PUBLIC_URL` (e.g. `https://sashwanth-travels.onrender.com`, or your own domain later), the owner details and your API keys. Add any other keys from `.env.example` under **Environment** (WhatsApp, SMS, liteAPI and others).
+4. Deploy. Open the `.onrender.com` address; `/api/health` should show `"ok":true`.
+5. **Own domain:** Settings → Custom Domains → add `sashwanthtravels.in`, create the DNS records Render shows, then update `PUBLIC_URL`.
+6. **Razorpay webhook:** `https://YOUR-ADDRESS/api/pay/webhook`.
+7. **Updates:** push to GitHub and Render redeploys automatically. The disk (accounts, bookings, photos, encryption key) is kept.
+8. **Backups:** Render takes daily disk snapshots. Download your own copy now and then from the service's **Shell** tab: `tar -czf /tmp/backup.tgz -C /var/data .`

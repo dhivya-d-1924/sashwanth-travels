@@ -1,9 +1,11 @@
+# Render Blueprint: one web service with a persistent disk for accounts, bookings and photos.
+# Render → New → Blueprint → pick this repository. Secret keys are asked for during setup (sync: false).
 services:
   - type: web
     name: sashwanth-travels
     runtime: node
-    region: singapore
-    plan: starter
+    region: singapore          # closest Render region to India
+    plan: starter              # the free plan has no disk and sleeps when idle; bookings would be lost
     buildCommand: npm ci && npm run build
     startCommand: node server/server.js
     healthCheckPath: /api/health

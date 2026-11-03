@@ -127,9 +127,19 @@ function createNotifier({ D, store, env = process.env, fetchImpl = fetch, mailer
     for (const [path, doc] of Object.entries(D.docs)) {
       /* ---- cab bookings ---- */
       if (path.startsWith("requests/")) {
-        const uid = path.slice(9), r = doc.data || {}, dec = (((D.docs["decisions/" + uid] || {}).data || {}).bookings) || {}, who = customer(uid);
+        const uid = path.slice(9), r = doc.data || {}, dec = (((D.docs["decisions/" + uid] || {}).data || {}).bookings) || {}, who0 = customer(uid);
         for (const [id, b] of Object.entries(r.bookings || {})) {
           const d = dec[id] || {}, s = cabStatus(b, d), ref = b.ref || id, route = `${b.from} → ${b.to}`;
+          /* An owner-approved contact change: trip messages go to the new name and number (email stays with the account). */
+          const who = d.contact && d.contact.phone ? { ...who0, name: d.contact.name || who0.name, phone: d.contact.phone } : who0;
+          if (b.review && b.review.stars && b.review.at) out.push({ key: `own:review:${id}:${b.review.at}`, to: owner(), ref, subject: `New ${b.review.stars}★ review · ${ref}`, text: `New ${b.review.stars}-star review for ${ref} (${route}) from ${who0.name}${b.review.text ? `: "${String(b.review.text).slice(0, 300)}"` : "."} Publish or reply in Owner console → Reviews.` });
+          const cc = b.contactChange, cd = d.contactDecision;
+          if (cc && cc.id && !(cd && cd.reqId === cc.id) && !["cancelled", "rejected", "completed"].includes(s))
+            out.push({ key: `own:cc:${id}:${cc.id}`, to: owner(), ref, subject: `Contact change request ${ref}`, text: `Customer asks to change the contact on ${ref} (${route}) to ${cc.name} ${cc.phone}${cc.why ? ` (${cc.why})` : ""}. Approve or reject in Owner console → Bookings.` });
+          if (cc && cd && cd.reqId === cc.id) {
+            const okMsg = cd.status === "approved";
+            out.push({ key: `cc:${id}:${cc.id}:${cd.status}`, to: okMsg ? who : who0, ref, short: okMsg ? "Contact updated" : "Contact change not approved", subject: `${okMsg ? "Contact updated" : "Contact change not approved"} · ${ref}`, text: okMsg ? `The contact for ${ref} (${route}) is now ${cc.name}, ${cc.phone}. Trip updates will come to this number.` : `Your request to change the contact on ${ref} wasn't approved${cd.note ? ": " + cd.note : "."} Please call us if you need help.` });
+          }
           out.push({ key: `own:new:${id}`, to: owner(), ref, subject: `New booking request ${ref}`, text: `New booking request ${ref}: ${route} on ${fmtDay(b.date)} for ${b.days} day(s), ${b.pax || "?"} passenger(s), ${b.vehicleName || ""}. Customer: ${who.name} ${who.phone}.` });
           const label = { confirmed: "Booking confirmed", rejected: "Vehicle not available", changes_requested: "Owner needs information", cancelled: "Booking cancelled", on_trip: "Trip started", completed: "Trip completed" }[s];
           if (label) out.push({ key: `cab:${id}:${s}`, to: who, ref, short: label, subject: `${label} · ${ref}`, text: `${label}: ${ref}, ${route} on ${fmtDay(b.date)}.${d.note ? " Note: " + d.note : ""}${s === "completed" && d.bill ? "" : ""}` });
@@ -149,7 +159,7 @@ function createNotifier({ D, store, env = process.env, fetchImpl = fetch, mailer
             if (at(endMorning, 0, 6 * H)) out.push({ key: `cabend:${id}`, to: who, ref, short: "Trip ends today", subject: `Your trip ends today · ${ref}`, text: `Your trip ${ref} ends today (${fmtDay(last)}). ${b.type === "oneway" ? `Drop at ${b.to}.` : `Return to ${b.from} by evening.`} The final bill is based on the odometer reading; the advance is deducted.` });
           }
         }
-        for (const [tid, tk] of Object.entries(r.tickets || {})) out.push({ key: `own:ticket:${uid}:${tid}`, to: owner(), ref: "", subject: "Customer message", text: `Message from ${tk.name || who.name} ${tk.phone || who.phone}: ${tk.message}` });
+        for (const [tid, tk] of Object.entries(r.tickets || {})) out.push({ key: `own:ticket:${uid}:${tid}`, to: owner(), ref: "", subject: "Customer message", text: `Message from ${tk.name || who0.name} ${tk.phone || who0.phone}: ${tk.message}` });
       }
       /* ---- flights & hotels ---- */
       if (path.startsWith("travel/")) {

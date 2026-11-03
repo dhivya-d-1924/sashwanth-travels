@@ -287,6 +287,26 @@ Your choices and your photos survive the automatic refresh. Set `PHOTOS=off` to 
 
 The destination list and highlights are in `server/destinations.json`. The selection rules are in `server/photopick.js`; `npm run build` copies both into the page.
 
+## v3.3: contact changes with owner approval, one-tap call and message
+
+- **Changing the name or phone after booking.** In My Trips, a customer taps **Change name or phone** on a booking and gives the authorised traveller's name, mobile number and an optional reason. The current details stay on the booking until the owner acts.
+  - **Owner:** the request appears in Owner console → Bookings, counted in the badge, showing old → new details. Approve it, or reject it with a reason.
+  - **Customer:** sees the result.
+  - **Notifications:** the owner is told about the request. After approval, trip messages (WhatsApp/SMS) go to the new number.
+  - **Enforced by the server:** customers can't edit a booking's name or phone directly.
+- **One-tap contact.** Call, WhatsApp and SMS buttons with a pre-filled message naming the booking appear in three places:
+  - on each booking in My Trips (to the business, and to the driver once assigned);
+  - on each booking in the owner console (to the customer);
+  - on the change request (to check the new number).
+- **Contact icons only:** the footer and contact section show just WhatsApp, Instagram, Gmail, Call and SMS (v3.3.1). Official logos can be placed in `public/brand/` (e.g. `whatsapp.svg`, `gmail.svg`, `sms.svg`).
+
+## v3.4: ratings and reviews
+
+- **Who can review:** only customers whose trip is **completed**, checked by the server. They rate 1–5 stars and can add a short review (up to 500 characters) from My Trips. They can edit it later.
+- **Owner:** gets a WhatsApp/email for each new review. Owner console → **Reviews** lets you publish a review (with an optional public reply) or hide it.
+- **On the website:** published reviews appear in **What our travellers say** (`/#reviews`), with the average rating and a star breakdown. Only the first name and last initial are shown, never phone numbers. Customers can't add or publish reviews themselves.
+- **No sample reviews:** the section stays empty until real reviews are published. Please publish honest reviews, good and bad, and hide only abusive or off-topic ones.
+
 ## Not built yet (needs the owner's accounts or decisions)
 
 1. Opening-hours data for attractions (needs Google Places or similar).

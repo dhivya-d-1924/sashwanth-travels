@@ -79,8 +79,8 @@ const ROLE_LABEL={owner:"Owner",manager:"Manager",driver:"Driver",pending:"Staff
 /* What each role may do. The database rules enforce the customer/staff boundary;
    manager/driver separation is enforced here, inside the staff area. */
 const PERMS={
-  owner:["notify","overview","bookings","travel","trips","fleet","business","routes","calendar","support","gallery","photos","team","ready"],
-  manager:["overview","bookings","travel","trips","fleet","business","routes","calendar","support","gallery","photos","ready"],
+  owner:["notify","overview","bookings","travel","trips","fleet","business","routes","calendar","support","gallery","photos","reviews","team","ready"],
+  manager:["overview","bookings","travel","trips","fleet","business","routes","calendar","support","gallery","photos","reviews","ready"],
   driver:["trips"],
   pending:[],customer:[],readonly:[],guest:[]
 };
@@ -137,7 +137,8 @@ function effective(b,d){
   else if(d.status==="changes_requested"&&b.payment&&b.payment.at>(d.at||0))status="payment_submitted";
   else if(d.status)status=d.status;
   else status=b.payment?"payment_submitted":"awaiting_payment";
-  return{...b,status,ownerNote:d.note||"",paidOnline:d.paidOnline||null,refund:d.refund||null,assign:d.assign||null,trip:d.trip||{},lockedFare:d.fare||null,advancePaid:!!d.advancePaid,rc:d.rc||b.rc,decidedAt:d.at||0};
+  const ct=d.contact&&d.contact.name?d.contact:null;
+  return{...b,status,name:ct?ct.name:b.name,phone:ct?ct.phone:b.phone,origName:b.name,origPhone:b.phone,contact:ct,contactChange:b.contactChange||null,contactDecision:d.contactDecision||null,review:b.review||null,reviewMod:d.reviewMod||null,ownerNote:d.note||"",paidOnline:d.paidOnline||null,refund:d.refund||null,assign:d.assign||null,trip:d.trip||{},lockedFare:d.fare||null,advancePaid:!!d.advancePaid,rc:d.rc||b.rc,decidedAt:d.at||0};
 }
 const hoursToStart=b=>(new Date(b.date+"T"+(b.time||"06:00")+":00+05:30").getTime()-Date.now())/36e5;
 function cancelRule(b){
@@ -225,6 +226,7 @@ async function boot(){
   db.doc("site/availability").onSnapshot(s=>{S.avail=s.exists?structuredClone(s.data()):{blocks:{}};S.avail.blocks=S.avail.blocks||{};renderWizard();renderOwner()},()=>{});
   db.doc("site/gallery").onSnapshot(s=>{const before=Object.keys(S.gallery.items||{}).length;S.gallery=s.exists?structuredClone(s.data()):{items:{}};S.gallery.items=S.gallery.items||{};
     const now=Object.keys(S.gallery.items).length;if(S.ready&&now>before)toast("New photo added to the gallery");renderGallery();renderRoutes();renderPlaces();renderOwner()},()=>{});
+  db.doc("site/reviews").onSnapshot(s=>{REV.pub=s.exists?(structuredClone(s.data()).items||{}):{};renderReviews();if(S.ownerTab==="reviews")renderOwner()},()=>{});
   db.doc("site/roles").onSnapshot(s=>{S.roles=s.exists?structuredClone(s.data()):{staff:{}};S.roles.staff=S.roles.staff||{};
     if(edit&&!owner){const r=S.roles.staff[S.uid]?.role;S.role=r==="manager"||r==="driver"?r:"pending"}
     renderAccount();renderOwner();renderAll()},()=>{});
@@ -735,6 +737,7 @@ function finalHTML(b){const f=finalBill(b);if(!f)return"";
 function renderTrips(){renderTrips0();renderTravelTrips()}
 function renderTrips0(){
   const L=$("#tripList"),c=cfg();
+  const ae=document.activeElement;if(ae&&L.contains(ae)&&ae.matches("input,textarea,select"))return; /* don't wipe what the customer is typing */
   if(S.role==="guest"){L.innerHTML=`<div class="empty">Sign in to see your trips. Requests from the form and the agent appear here with live status and trip photos.</div>`;return}
   if(isStaff()&&S.role!=="owner"){L.innerHTML=`<div class="empty">Staff accounts see trips in the Owner console.</div>`;return}
   const bs=myBookings();
@@ -744,9 +747,12 @@ function renderTrips0(){
       <div class="small muted">${fmtDate(b.date)} – ${fmtDate(b.endDate)} · ${esc(b.vehicleName)} · ${b.pax} pax · ${b.lockedFare?"locked":"est."} <b class="num">${inr(fare?.total)}</b> · advance <b class="num">${inr(fare?.advance)}</b></div>
       ${st.step?`<div class="track t5">${[1,2,3,4,5].map(n=>`<span class="${n<=st.step?"on":""}"></span>`).join("")}</div><div class="track-labels t5"><span>Requested</span><span>Paid</span><span>Confirmed</span><span>On trip</span><span>Done</span></div>`:""}
       ${b.ownerNote?`<p class="note">Owner: ${esc(b.ownerNote)}</p>`:""}
-      ${b.assign&&["confirmed","on_trip"].includes(b.status)?`<div class="drv"><span class="ac-dot">${esc((b.assign.driverName||"D")[0])}</span><div><b>${esc(b.assign.driverName)}</b> · your driver<div class="small"><span class="mono" style="user-select:all">${esc(b.assign.driverPhone||"")}</span> · <span class="mono">${esc(b.assign.vehicleNo)}</span></div></div></div>`:""}
+      ${b.assign&&["confirmed","on_trip"].includes(b.status)?`<div class="drv"><span class="ac-dot">${esc((b.assign.driverName||"D")[0])}</span><div><b>${esc(b.assign.driverName)}</b> · your driver<div class="small"><span class="mono" style="user-select:all">${esc(b.assign.driverPhone||"")}</span> · <span class="mono">${esc(b.assign.vehicleNo)}</span></div></div></div>${fastContact(b.assign.driverPhone,`Hi ${b.assign.driverName}, this is ${b.name} for trip ${b.ref} (${b.from} → ${b.to}).`,"Contact your driver")}`:""}
+      ${["cancelled","rejected"].includes(b.status)?"":ccHTML(b)}
+      ${["completed","cancelled"].includes(b.status)?"":fastContact(c.whatsapp||c.phone,`Hi ${c.name||""}, this is ${b.name} about booking ${b.ref} (${b.from} → ${b.to}, ${fmtDate(b.date)}).`,`Contact ${c.name||"us"} about this booking`)}
       ${geoAvail()&&trackable(b)?`<div class="bk-actions"><button class="btn sm primary" type="button" data-track="${esc(b.id)}" data-toward="to">${PIN} Track trip to ${esc(b.to)}</button>${b.type!=="oneway"?`<button class="btn sm" type="button" data-track="${esc(b.id)}" data-toward="back">Return to ${esc(b.from)}</button>`:""}</div>`:""}
       ${photoStrip(b.trip)}${finalHTML(b)}
+      ${b.status==="completed"?revCustHTML(b):""}
       ${needPay&&window.claude?.payments&&!b.paidOnline?`<div class="paybox"><div><b>Pay the ${inr(fare?.advance)} advance online</b><div class="small muted">UPI, cards, net banking or wallets via Razorpay. Your booking confirms instantly if the vehicle is still free.</div></div><button type="button" class="btn primary" data-payonline="${esc(b.id)}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/></svg>Pay ${inr(fare?.advance)} securely</button></div><p class="small muted" style="text-align:center">or pay directly and send the reference</p>`:""}
       ${b.paidOnline?`<p class="chip ok">Advance ${inr(b.paidOnline.amount)} paid online · <span class="mono">${esc(b.paidOnline.paymentId)}</span></p>`:""}
       ${b.refund?`<p class="chip info">Refunded ${inr(b.refund.amount)}${b.refund.full?" (full)":""} · reaches your account in 5–7 working days</p>`:""}
@@ -890,7 +896,7 @@ function initVoice(){
 }
 
 /* ================= staff console ================= */
-const OTABS=[["overview","Overview"],["bookings","Bookings"],["travel","Flights & hotels"],["trips","Trip sheets"],["fleet","Fleet & rates"],["business","Business setup"],["routes","Routes"],["calendar","Calendar"],["gallery","Live gallery"],["photos","Photos"],["support","Messages"],["team","Team & roles"],["notify","Notifications"],["ready","Launch readiness"]];
+const OTABS=[["overview","Overview"],["bookings","Bookings"],["travel","Flights & hotels"],["trips","Trip sheets"],["fleet","Fleet & rates"],["business","Business setup"],["routes","Routes"],["calendar","Calendar"],["gallery","Live gallery"],["photos","Photos"],["reviews","Reviews"],["support","Messages"],["team","Team & roles"],["notify","Notifications"],["ready","Launch readiness"]];
 let draft=null;
 function renderOwner(){
   const show=isStaff();
@@ -900,14 +906,14 @@ function renderOwner(){
   if(S.role==="pending"){$("#ownerTabs").innerHTML="";$("#ownerBody").innerHTML=`<div class="empty">You have staff access, but no role yet. Ask the owner to add you under Team &amp; roles. Your Claude name is <b>${esc(S.me?.name||"unknown")}</b>.</div>`;return}
   const tabs=OTABS.filter(([k])=>can(k));
   if(!S.ownerTab||!can(S.ownerTab))S.ownerTab=tabs[0]?.[0];
-  const bks=allBookings(),pend=bks.filter(b=>OPEN.includes(b.status)).length;
+  const bks=allBookings(),pend=bks.filter(b=>OPEN.includes(b.status)||ccPending(b)).length;
   $("#ownerBadge").hidden=!pend||!can("bookings");$("#ownerBadge").textContent=pend;
   $("#ownerTabs").innerHTML=tabs.map(([k,l])=>`<button role="tab" type="button" data-otab="${k}" aria-selected="${S.ownerTab===k}">${l}${k==="bookings"&&pend?` (${pend})`:""}</button>`).join("");
   const B=$("#ownerBody"),tab=S.ownerTab;
   if(["business","fleet","routes"].includes(tab)&&draft?.dirty&&B.dataset.tab===tab)return;
   if(document.activeElement&&B.contains(document.activeElement)&&document.activeElement.matches("input,textarea,select"))return;
   B.dataset.tab=tab;
-  B.innerHTML=({notify:oNotify,travel:oTravel,overview:()=>oOverview(bks),bookings:()=>oBookings(bks),trips:()=>oTrips(bks),fleet:oFleet,business:oBusiness,routes:oRoutes,calendar:oCalendar,gallery:oGallery,photos:oPhotos,support:oSupport,team:oTeam,ready:oReady})[tab]();
+  B.innerHTML=({notify:oNotify,travel:oTravel,overview:()=>oOverview(bks),bookings:()=>oBookings(bks),trips:()=>oTrips(bks),fleet:oFleet,business:oBusiness,routes:oRoutes,calendar:oCalendar,gallery:oGallery,photos:oPhotos,reviews:oReviews,support:oSupport,team:oTeam,ready:oReady})[tab]();
   labelTables(B);
 }
 /* Phones: each table row becomes a card; every cell is labelled with its column name. */
@@ -928,12 +934,14 @@ function oOverview(bks){
 }
 function custChips(uid){const st=customerStats(uid),c=S.customers[uid]||{};return`${c.verified?'<span class="chip ok">Phone verified</span>':'<span class="chip warn">Unverified</span>'}${st.completed?`<span class="chip info">Returning · ${st.completed} trip${st.completed>1?"s":""}</span>`:'<span class="chip mut">New customer</span>'}${st.cancelled>1?`<span class="chip bad">${st.cancelled} cancellations</span>`:""}${c.blocked?'<span class="chip bad">Blocked</span>':""}`}
 function oBookings(bks){
-  const f=S.bkFilter,list=bks.filter(b=>f==="all"||(f==="open"?OPEN.includes(b.status):f==="active"?["confirmed","on_trip"].includes(b.status):b.status===f));
+  const f=S.bkFilter,list=bks.filter(b=>f==="all"||(f==="open"?OPEN.includes(b.status)||ccPending(b):f==="active"?["confirmed","on_trip"].includes(b.status):b.status===f));
   return`<div class="seg" role="group" style="margin-bottom:14px;flex-wrap:wrap">${[["open","Open"],["active","Confirmed & on trip"],["completed","Completed"],["all","All"]].map(([k,l])=>`<button type="button" data-bkf="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div>
   <div class="grid g2">${list.map(b=>{const st=STATUS[b.status]||{l:b.status,c:"mut"};const v=veh(b.vehicleId);const fresh=v?priceWith(rateCard(v),b.type==="oneway"?b.km:b.km*2,b.days):null;const mismatch=fresh&&!b.lockedFare&&Math.abs(fresh.total-(b.fare?.total||0))>1;const trusted=isTrusted(b.uid);const blocked=S.customers[b.uid]?.blocked;
     return`<article class="panel bk"><div class="trip-top"><div><span class="mono small muted">${esc(b.ref)} · ${b.source==="agent"?"via AI agent":"via form"}</span><h3>${esc(b.from)} → ${esc(b.to)}</h3></div><span class="chip ${st.c}">${esc(st.l)}</span></div>
       <div class="row" style="display:flex;flex-wrap:wrap;gap:6px">${custChips(b.uid)}</div>
       <dl class="kv"><dt>Customer</dt><dd>${esc(b.name)} · <span class="mono" style="user-select:all">${esc(b.phone)}</span></dd><dt>Dates</dt><dd>${fmtDate(b.date)} – ${fmtDate(b.endDate)} (${b.days}d) ${b.time?"· "+esc(b.time):""}</dd><dt>Vehicle</dt><dd>${esc(b.vehicleName)} · ${b.pax} pax · ${b.type==="oneway"?"one way":"round"}</dd><dt>Pickup</dt><dd>${esc(b.pickup||"—")}</dd><dt>Fare</dt><dd class="num">${inr((b.lockedFare||fresh||b.fare)?.total)} ${b.lockedFare?"(locked)":"(current rate card)"} · advance ${inr((b.lockedFare||fresh||b.fare)?.advance)}</dd>${b.payment?`<dt>Payment</dt><dd>${esc(b.payment.method)} · UTR <span class="mono" style="user-select:all">${esc(b.payment.utr)}</span></dd>`:""}${b.notes?`<dt>Notes</dt><dd>${esc(b.notes)}</dd>`:""}</dl>
+      ${fastContact(b.phone,`Hi ${b.name}, this is ${cfg().name||"Sashwanth Travels"} about your booking ${b.ref} (${b.from} → ${b.to}, ${fmtDate(b.date)}).`,"Contact the customer")}
+      ${ccOwnerHTML(b)}
       ${b.paidOnline?`<p class="chip ok">Paid online ${inr(b.paidOnline.amount)} · <span class="mono" style="user-select:all">${esc(b.paidOnline.paymentId)}</span></p>`:""}
       ${b.refund?`<p class="chip info">Refunded ${inr(b.refund.amount)}${b.refund.full?" (full)":""}</p>`:""}
       ${b.paidOnline&&S.role==="owner"&&window.claude?.payments&&!b.refund?.full&&["cancelled","rejected","changes_requested","completed"].includes(b.status)?`<div class="refundbox"><label class="f"><span>Refund amount ₹ (blank = full)</span><input data-refamt="${esc(b.id)}" type="number" min="1" max="${b.paidOnline.amount-(b.refund?.amount||0)}" inputmode="decimal"></label><button type="button" class="btn sm danger" data-refund="${esc(b.id)}" data-uid="${esc(b.uid)}">Refund via Razorpay</button></div>`:""}
@@ -992,7 +1000,7 @@ function oBusiness(){
    <div><h3>Payments</h3><div style="display:flex;flex-wrap:wrap;gap:12px;margin:10px 0">${["UPI","Bank transfer","Card","Cash to driver"].map(m=>`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-pm="${m}" ${(c.paymentMethods||[]).includes(m)?"checked":""} style="width:auto">${m}</label>`).join("")}</div>
     <div class="form-grid">${f("upiId","UPI ID","text",'placeholder="name@bank"')}${f("advancePercent","Advance %","number",'min="0" max="100"')}${f("gstPercent","GST %","number",'min="0" max="28"')}${f("nightCharge","Night halt ₹/night","number",'min="0"')}</div>
     <div class="form-grid" style="margin-top:12px">${ta("bankDetails","Bank details (account name, number, IFSC)")}${ta("paymentTerms","Payment terms")}</div></div>
-   <div><h3>Social media &amp; music</h3><p class="small muted" style="margin-top:4px">Full https links. Only filled links show on the site; WhatsApp uses the number above.</p><div class="form-grid" style="margin-top:10px">${[["instagram","Instagram page"],["facebook","Facebook page"],["youtube","YouTube channel"],["x","X (Twitter)"],["linkedin","LinkedIn"],["googleReviews","Google reviews link"],["mapLink","Map / directions link"]].map(([k,l])=>`<label class="f"><span>${l}</span><input data-soc="${k}" type="url" value="${esc((c.social||{})[k]||"")}" placeholder="https://"></label>`).join("")}</div>
+   <div><h3>Contact icons &amp; music</h3><p class="small muted" style="margin-top:4px">Instagram needs the full https link to your page. WhatsApp, Call and SMS use the numbers above, and Gmail uses the email above.</p><div class="form-grid" style="margin-top:10px">${[["instagram","Instagram page"]].map(([k,l])=>`<label class="f"><span>${l}</span><input data-soc="${k}" type="url" value="${esc((c.social||{})[k]||"")}" placeholder="https://"></label>`).join("")}</div>
     <div class="form-grid" style="margin-top:12px">${f("musicUrl","Background music file (optional)","text",'placeholder="https://…/music.mp3 or /music/theme.mp3"')}</div><p class="small muted" style="margin-top:6px">Leave blank to use the built-in original music. Use only music you own or have a licence for.</p></div>
    <div><h3>Promo figures (optional)</h3><p class="small muted" style="margin-top:4px">Shown in the "at a glance" strip only when filled. Leave blank rather than guess.</p><div class="form-grid" style="margin-top:10px">${f("yearsInBusiness","Years in business","text",'placeholder="e.g. 12"')}${f("tripsCompleted","Trips completed","text",'placeholder="e.g. 8,000+"')}</div></div>
    <div><h3>Booking rules</h3><div class="form-grid" style="margin-top:10px">${f("cancelCutoffHours","Online cancellation closes (hours before pickup)","number",'min="0" max="168"')}${f("maxOpenRequests","Max unpaid requests per customer","number",'min="1" max="10"')}</div></div>
@@ -1739,34 +1747,33 @@ const GEO_TOOLS=()=>geoAvail()?[
 function renderPlanner(){renderPlanner0();renderPlanGeo();loadPlanGeo()}
 /* ================= v2.9: background music + social links ================= */
 /* --- Social links: only https links the owner entered are shown; sample mode shows the layout for review. --- */
-const SOCIAL=[
+const SOCIAL=[ /* contact channels only */
   {k:"whatsapp",l:"WhatsApp",svg:'<path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2z"/>'},
   {k:"instagram",l:"Instagram",svg:'<rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r=".8"/>'},
-  {k:"facebook",l:"Facebook",svg:'<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M13 20v-7h2.5l.5-2.5h-3V9a1 1 0 0 1 1-1h2V5.5h-2.5A3 3 0 0 0 10.5 8.5v2H8V13h2.5v7"/>'},
-  {k:"youtube",l:"YouTube",svg:'<rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="M10 9.5v5l4.5-2.5z"/>'},
-  {k:"x",l:"X (Twitter)",svg:'<path d="M5 5l14 14M19 5L5 19"/>'},
-  {k:"linkedin",l:"LinkedIn",svg:'<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 10.5V17M8 7.5v.01M11.5 17v-6.5M11.5 13a2.5 2.5 0 0 1 5 0v4"/>'},
-  {k:"googleReviews",l:"Google reviews",svg:'<path d="M12 3l2.6 5.5 6 .7-4.5 4.1 1.2 5.9L12 16.3 6.7 19.2l1.2-5.9L3.4 9.2l6-.7z"/>'},
-  {k:"mapLink",l:"Directions",svg:'<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'}
+  {k:"gmail",l:"Gmail",svg:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/>'},
+  {k:"phone",l:"Call",svg:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>'},
+  {k:"sms",l:"SMS",svg:'<path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 4V6a1 1 0 0 1 1-1z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/>'}
 ];
-const SAMPLE_SOCIAL={instagram:"https://www.instagram.com/",facebook:"https://www.facebook.com/",youtube:"https://www.youtube.com/",x:"https://x.com/",linkedin:"https://www.linkedin.com/",googleReviews:"https://www.google.com/maps",mapLink:"https://www.openstreetmap.org/"};
+const SAMPLE_SOCIAL={instagram:"https://www.instagram.com/"};
 const safeHttps=u=>{try{const x=new URL(String(u||"").trim());return x.protocol==="https:"?x.href:""}catch{return""}};
 function waLink(){const d=String(cfg().whatsapp||cfg().phone||"").replace(/\D/g,"");const n=d.length===10?"91"+d:d.length>=11&&d.length<=15?d:"";return n?`https://wa.me/${n}?text=${encodeURIComponent("Hi "+(cfg().name||"")+", I'd like to book a trip.")}`:""}
+function gmailLink(){const e=cfg().email;return V_RE.email.test(e||"")?`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(e)}&su=${encodeURIComponent("Trip enquiry")}`:""}
 function socialLinks(){
   const c=cfg(),s=c.social||{},out=[];
   for(const it of SOCIAL){
-    let href=it.k==="whatsapp"?waLink():safeHttps(s[it.k]);
+    let href=it.k==="whatsapp"?waLink():it.k==="gmail"?gmailLink():it.k==="phone"?telHref(c.phone):it.k==="sms"?smsHref(c.whatsapp||c.phone,""):safeHttps(s[it.k]);
     if(!href&&isSample()&&SAMPLE_SOCIAL[it.k])href=SAMPLE_SOCIAL[it.k];
+    if(!href&&isSample()&&["whatsapp","gmail","phone","sms"].includes(it.k))href="#contact";
     if(href)out.push({...it,href});
   }
   return out;
 }
-const socialIcon=(it,cls="soc")=>`<a class="${cls} soc-${it.k}" href="${esc(it.href)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(it.l)}" title="${esc(it.l)}${isSample()&&it.k!=="whatsapp"?" (sample link — set yours in Business setup)":""}"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${it.svg}</svg>${cls==="soc-big"?`<span>${esc(it.l)}</span>`:""}</a>`;
+const socialIcon=(it,cls="soc")=>`<a class="${cls} soc-${it.k}" href="${esc(it.href)}" ${/^https?:/.test(it.href)?'target="_blank" rel="noopener noreferrer"':""} aria-label="${esc(it.l)}" title="${esc(it.l)}${isSample()&&it.href==="#contact"||isSample()&&it.k==="instagram"?" (sample — set yours in Business setup)":""}">${BRAND[it.k]?`<img src="/brand/${it.k}.svg" alt="" width="20" height="20">`:`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${it.svg}</svg>`}${cls==="soc-big"?`<span>${esc(it.l)}</span>`:""}</a>`;
 function renderSocial(){
   const list=socialLinks();
   const F=$("#footSocial");if(F)F.innerHTML=list.map(it=>socialIcon(it)).join("");
-  const follow=list.filter(it=>it.k!=="whatsapp");
-  const C=$("#contactSocial");if(C){C.hidden=!follow.length;C.innerHTML=follow.length?`<div class="eyebrow" style="margin-bottom:8px">Follow us</div><div class="soc-row">${follow.map(it=>socialIcon(it,"soc-big")).join("")}</div>${isSample()?'<p class="small muted" style="margin-top:8px">Sample links for review. The owner sets the real ones in Owner console → Business setup.</p>':""}`:""}
+  const follow=list;
+  const C=$("#contactSocial");if(C){C.hidden=true;C.innerHTML="";}if(false){ /* the "Ask us instantly" buttons above already cover these */ C.hidden=!follow.length;C.innerHTML=follow.length?`<div class="eyebrow" style="margin-bottom:8px">Contact us</div><div class="soc-row">${follow.map(it=>socialIcon(it,"soc-big")).join("")}</div>${isSample()?'<p class="small muted" style="margin-top:8px">Sample links for review. The owner sets the real ones in Owner console → Business setup.</p>':""}`:""}
   const W=$("#waFloat"),wl=waLink();if(W){W.hidden=!wl&&!isSample();W.href=wl||"#contact";if(wl){W.target="_blank";W.title="Chat on WhatsApp"}else{W.removeAttribute("target");W.title="WhatsApp (sample — the owner adds the number in Business setup)"}}
 }
 
@@ -1914,14 +1921,67 @@ document.addEventListener("click",e=>{for(const [sel,box] of GATES){const b=e.ta
 
 /* ================= v3.0: quick contact — WhatsApp, Gmail, Instagram, Call ================= */
 const BRAND={};/* Official icons the owner may place in public/brand/ (whatsapp.svg, gmail.svg, instagram.svg …) replace ours. */
-if(window.claude?.auth)["whatsapp","gmail","instagram","phone","facebook","youtube","linkedin","x"].forEach(k=>{const i=new Image();i.onload=()=>{BRAND[k]=true;renderSocial();renderContactQuick()};i.src=`/brand/${k}.svg`});
+if(window.claude?.auth)["whatsapp","gmail","instagram","phone","sms"].forEach(k=>{const i=new Image();i.onload=()=>{BRAND[k]=true;renderSocial();renderContactQuick()};i.src=`/brand/${k}.svg`});
 const QC_ICON={whatsapp:'<path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2z"/>',
   gmail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/>',
   instagram:'<rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r=".8"/>',
-  phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>'};
+  phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>',
+  sms:'<path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 4V6a1 1 0 0 1 1-1z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/>',
+  telegram:'<path d="M21 4L3 11l6 2 2 6 3-4 5 4z"/><path d="M9 13l9-7"/>'};
 const qcIcon=(k,sz=20)=>BRAND[k]?`<img src="/brand/${k}.svg" alt="" width="${sz}" height="${sz}">`:`<svg viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${QC_ICON[k]}</svg>`;
 /* tel: link for Indian mobiles and landlines (044 …) or any +country number */
 function telHref(p){const raw=String(p||"").trim(),d=raw.replace(/\D/g,"");if(d.length<8)return"";if(raw.startsWith("+"))return"tel:+"+d;if(d.length===10)return"tel:+91"+d;if(d.length===11&&d.startsWith("0"))return"tel:+91"+d.slice(1);if(d.length===12&&d.startsWith("91"))return"tel:+"+d;return"tel:"+d}
+/* One-tap Call / WhatsApp / SMS to any number, with a pre-filled message (bookings, drivers, customers). */
+function phoneDigits(p){const raw=String(p||"").trim(),d=raw.replace(/\D/g,"");if(d.length===10&&/^[6-9]/.test(d))return"91"+d;if(d.length===11&&d.startsWith("0"))return"91"+d.slice(1);if(d.length===12&&d.startsWith("91"))return d;if(raw.startsWith("+")&&d.length>=8&&d.length<=15)return d;return""}
+function smsHref(p,text){const d=phoneDigits(p);return d?`sms:+${d}${text?`?&body=${encodeURIComponent(text)}`:""}`:""}
+function waHrefTo(p,text){const d=phoneDigits(p);return d?`https://wa.me/${d}${text?`?text=${encodeURIComponent(text)}`:""}`:""}
+function fastContact(phone,text,label){
+  const call=telHref(phone),wa=waHrefTo(phone,text),sms=smsHref(phone,text);if(!call&&!wa)return"";
+  return`<div class="fast" role="group" aria-label="${esc(label)}"><span class="lbl">${esc(label)}</span>${call?`<a class="qc qc-phone" href="${esc(call)}">${qcIcon("phone",18)}<span>Call</span></a>`:""}${wa?`<a class="qc qc-whatsapp" href="${esc(wa)}" target="_blank" rel="noopener noreferrer">${qcIcon("whatsapp",18)}<span>WhatsApp</span></a>`:""}${sms?`<a class="qc qc-sms" href="${esc(sms)}">${qcIcon("sms",18)}<span>SMS</span></a>`:""}</div>`}
+const ccPending=b=>!!(b.contactChange&&b.contactChange.id&&!(b.contactDecision&&b.contactDecision.reqId===b.contactChange.id));
+const CC_OPEN=["awaiting_payment","payment_submitted","changes_requested","confirmed"];
+/* Customer: the name and phone on a booking change only after the owner approves. */
+function ccHTML(b){
+  const cc=b.contactChange,cd=b.contactDecision,pend=ccPending(b),canAsk=CC_OPEN.includes(b.status)&&!pend;
+  let state="";
+  if(pend)state=`<p class="chip warn" style="justify-self:start">Change requested: ${esc(cc.name)} · ${esc(cc.phone)} — waiting for owner approval</p>`;
+  else if(cd&&cd.status==="approved")state=`<p class="small" style="color:var(--ok)">Approved by the owner on ${fmtTime(cd.at)}. Trip messages now go to this number.</p>`;
+  else if(cd&&cd.status==="rejected")state=`<p class="small" style="color:var(--signal)">Your change request wasn't approved${cd.note?`: ${esc(cd.note)}`:"."} You can call the owner, or ask again.</p>`;
+  return`<div class="ccbox"><div class="ccrow"><div class="ccnow"><span class="eyebrow">Travelling contact</span><br><b>${esc(b.name)}</b> · <span class="mono">${esc(b.phone)}</span></div>${canAsk?`<button type="button" class="btn sm" data-cctoggle="${esc(b.id)}" aria-expanded="false">Change name or phone</button>`:""}</div>${state}
+    ${canAsk?`<form class="ccform" data-ccform="${esc(b.id)}" hidden novalidate><p class="small muted" style="margin:0">The owner checks and approves the change. Until then, the current details stay on the booking.</p>
+      <div class="form-grid"><label class="f"><span>Authorised name</span><input name="ccName" required minlength="2" maxlength="60" autocomplete="name" value="${esc(b.name)}"></label><label class="f"><span>Mobile number</span><input name="ccPhone" required type="tel" inputmode="tel" autocomplete="tel" maxlength="16" value="${esc(b.phone)}"></label></div>
+      <label class="f"><span>Reason (optional)</span><input name="ccWhy" maxlength="140" placeholder="e.g. my father will travel; use his number"></label>
+      <div class="bk-actions"><button type="submit" class="btn sm primary">Send for approval</button><button type="button" class="btn sm ghost" data-cctoggle="${esc(b.id)}">Cancel</button></div></form>`:""}</div>`;
+}
+/* Owner: approve or reject a requested contact change. */
+function ccOwnerHTML(b){
+  if(!ccPending(b))return b.contact?`<p class="small muted">Contact changed from ${esc(b.origName)} · <span class="mono">${esc(b.origPhone)}</span> (approved ${fmtTime(b.contactDecision?.at)})</p>`:"";
+  const cc=b.contactChange;
+  return`<div class="ccbox" style="border-color:var(--warn)"><b>Customer asks to change the travelling contact</b>
+    <div class="ccdiff"><span>Name</span><span>${cc.name!==b.name?`<s>${esc(b.name)}</s> → `:""}<b>${esc(cc.name)}</b></span><span>Phone</span><span class="mono">${cc.phone!==b.phone?`<s>${esc(b.phone)}</s> → `:""}<b>${esc(cc.phone)}</b></span>${cc.why?`<span>Reason</span><span>${esc(cc.why)}</span>`:""}<span>Asked</span><span>${fmtTime(cc.at)}</span></div>
+    ${fastContact(cc.phone,`Hi ${cc.name}, this is ${cfg().name||"Sashwanth Travels"} about booking ${b.ref}.`,"Check the new number")}
+    <input data-ccnote="${esc(b.id)}" placeholder="Reason (shown to the customer if you reject)" aria-label="Reason for rejecting">
+    <div class="bk-actions"><button type="button" class="btn sm primary" data-ccok="${esc(b.id)}" data-uid="${esc(b.uid)}">Approve change</button><button type="button" class="btn sm danger" data-ccno="${esc(b.id)}" data-uid="${esc(b.uid)}">Reject</button></div></div>`;
+}
+async function ccRequest(id,form){
+  const name=form.ccName.value.trim().replace(/\s+/g," "),phone=form.ccPhone.value.trim(),why=form.ccWhy.value.trim();
+  if(!validateIn(form))return;
+  if(name.length<2)return toast("Enter the authorised traveller's name.",true);
+  if(!PHONE.test(phone))return toast("Enter a valid mobile number.",true);
+  const b=myBookings().find(x=>x.id===id);if(!b)return;
+  if(name===b.name&&phone.replace(/\D/g,"").slice(-10)===String(b.phone).replace(/\D/g,"").slice(-10))return toast("That's the same as the current details.",true);
+  try{await writeDoc("requests/"+S.uid,{bookings:{[id]:{contactChange:{id:"cc"+Date.now().toString(36),name,phone,why,at:Date.now()}}}});toast("Change sent to the owner for approval. You'll get a message when it's approved.")}
+  catch(e){toast(e.message||"Couldn't send the change. Try again.",true)}
+}
+async function ccDecide(uid,id,ok){
+  const b=allBookings().find(x=>x.id===id&&x.uid===uid);if(!b||!ccPending(b))return;
+  const cc=b.contactChange,note=($(`[data-ccnote="${CSS.escape(id)}"]`)?.value||"").trim(),now=Date.now();
+  if(!ok&&!note)return toast("Add a short reason so the customer knows why.",true);
+  const patch={contactDecision:{reqId:cc.id,status:ok?"approved":"rejected",note,at:now,by:S.uid},log:{[now]:`${ROLE_LABEL[S.role]}: contact change ${ok?"approved":"rejected"} (${cc.name} · ${cc.phone})${note?" — "+note:""}`}};
+  if(ok)patch.contact={name:cc.name,phone:cc.phone,reqId:cc.id,at:now};
+  try{await writeDoc("decisions/"+uid,{bookings:{[id]:patch}});toast(ok?"Contact updated. The customer is notified on the new number.":"Change rejected. The customer is notified.")}
+  catch(e){toast(e.message||"Couldn't save. Try again.",true)}
+}
 const igUser=()=>{const m=/instagram\.com\/([A-Za-z0-9._]{1,30})/i.exec((cfg().social||{}).instagram||"");return m&&!["p","reel","stories"].includes(m[1])?m[1]:""};
 function channelLinks(text,subject){
   const c=cfg(),out=[],t=String(text||`Hi ${c.name||""}, I'd like to book a trip.`);
@@ -1930,12 +1990,13 @@ function channelLinks(text,subject){
   if(V_RE.email.test(c.email||""))out.push({k:"gmail",l:"Gmail",href:`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(c.email)}&su=${encodeURIComponent(subject||"Trip enquiry")}&body=${encodeURIComponent(t)}`,alt:`mailto:${c.email}?subject=${encodeURIComponent(subject||"Trip enquiry")}&body=${encodeURIComponent(t)}`});
   const ig=igUser();if(ig)out.push({k:"instagram",l:"Instagram",href:`https://ig.me/m/${ig}`,copy:true});else if(safeHttps((c.social||{}).instagram))out.push({k:"instagram",l:"Instagram",href:safeHttps(c.social.instagram),copy:true});
   const th=telHref(c.phone);if(th)out.push({k:"phone",l:"Call",href:th});
-  if(isSample()&&!out.length)return[{k:"whatsapp",l:"WhatsApp",href:"#contact",sample:true},{k:"gmail",l:"Gmail",href:"#contact",sample:true},{k:"instagram",l:"Instagram",href:"#contact",sample:true},{k:"phone",l:"Call",href:"#contact",sample:true}];
+  const sm=smsHref(c.whatsapp||c.phone,t);if(sm)out.push({k:"sms",l:"SMS",href:sm});
+  if(isSample()&&!out.length)return[{k:"whatsapp",l:"WhatsApp",href:"#contact",sample:true},{k:"gmail",l:"Gmail",href:"#contact",sample:true},{k:"instagram",l:"Instagram",href:"#contact",sample:true},{k:"phone",l:"Call",href:"#contact",sample:true},{k:"sms",l:"SMS",href:"#contact",sample:true}];
   return out;
 }
 function renderContactQuick(){
   const Q=$("#quickContact");if(Q){const ch=channelLinks();Q.innerHTML=ch.length?`<div class="eyebrow" style="margin-bottom:8px">Ask us instantly</div><div class="qc-row">${ch.map(x=>`<a class="qc qc-${x.k}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} data-qc="${x.k}">${qcIcon(x.k,22)}<span>${esc(x.l)}</span></a>`).join("")}</div>${ch.some(x=>x.sample)?'<p class="small muted" style="margin-top:8px">Sample buttons. They work once the owner adds the WhatsApp number, email and Instagram link in Business setup.</p>':""}`:"";Q.hidden=!ch.length}
-  const V=$("#viaRow");if(V){const ch=channelLinks().filter(x=>x.k!=="phone"&&!x.sample);V.hidden=!ch.length;V.innerHTML=ch.length?`<span class="small muted">or send this query by</span>${ch.map(x=>`<button type="button" class="qc qc-${x.k} sm" data-via="${x.k}">${qcIcon(x.k,18)}<span>${esc(x.l)}</span></button>`).join("")}`:""}
+  const V=$("#viaRow");if(V){const ch=channelLinks().filter(x=>!["phone","sms"].includes(x.k)&&!x.sample);V.hidden=!ch.length;V.innerHTML=ch.length?`<span class="small muted">or send this query by</span>${ch.map(x=>`<button type="button" class="qc qc-${x.k} sm" data-via="${x.k}">${qcIcon(x.k,18)}<span>${esc(x.l)}</span></button>`).join("")}`:""}
   const D=$("#dialList");if(D){const ch=channelLinks();D.innerHTML=ch.map(x=>`<a class="dial-i qc-${x.k}" href="${esc(x.href)}" ${x.href.startsWith("http")?'target="_blank" rel="noopener noreferrer"':""} aria-label="${esc(x.l)}" title="${esc(x.l)}">${qcIcon(x.k,22)}<span>${esc(x.l)}</span></a>`).join("");$("#dialBtn").hidden=!ch.length}
 }
 async function sendVia(kind){
@@ -2153,6 +2214,8 @@ document.addEventListener("click",async e=>{
   if(d.cancel){t.closest(".trip").querySelector("[data-confirmcancel]").hidden=false;return}
   if(d.cancelno){t.closest("[data-confirmcancel]").hidden=true;return}
   if(d.cancelyes)return cancelMine(d.cancelyes);
+  if(d.cctoggle){const f=$(`[data-ccform="${CSS.escape(d.cctoggle)}"]`);if(f){f.hidden=!f.hidden;const op=t.closest(".ccbox").querySelector("[data-cctoggle][aria-expanded]");if(op)op.setAttribute("aria-expanded",String(!f.hidden));if(!f.hidden)f.ccName.focus()}return}
+  if(d.ccok||d.ccno){t.disabled=true;await ccDecide(d.uid,d.ccok||d.ccno,!!d.ccok);t.disabled=false;return}
   if(d.logout&&window.claude?.auth){window.claude.auth.logout();return}
   if(t.id==="menuBtn"){const dr=$("#drawer");dr.hidden=!dr.hidden;t.setAttribute("aria-expanded",String(!dr.hidden));return}
   if(t.closest("#drawer")&&t.tagName==="A"){$("#drawer").hidden=true;$("#menuBtn").setAttribute("aria-expanded","false");return}
@@ -2523,6 +2586,7 @@ document.addEventListener("click",async e=>{const b=e.target.closest?.("[data-ph
     await exAdminLoad();exLoad();
   }catch(err){toast(err.message,true);b.disabled=false}
 });
+document.addEventListener("submit",e=>{const f=e.target;if(!f.dataset||!f.dataset.ccform)return;e.preventDefault();const b=f.querySelector("[type=submit]");b.disabled=true;ccRequest(f.dataset.ccform,f).finally(()=>{b.disabled=false})});
 document.addEventListener("submit",async e=>{if(e.target.id!=="phAdd")return;e.preventDefault();const f=e.target,v=Object.fromEntries(new FormData(f));
   const[destinationId,attractionId]=String(v.where).split("|");const btn=f.querySelector("[type=submit]");
   if(!/^https:\/\//.test(v.url||""))return toast("Use a full https link to the photo.",true);
@@ -2532,6 +2596,71 @@ document.addEventListener("submit",async e=>{if(e.target.id!=="phAdd")return;e.p
   catch(err){toast(err.message,true)}finally{btn.disabled=false}
 });
 
-boot();renderExplore();exLoad();exFromHash();
+/* ================= v3.4: ratings & reviews =================
+   Only customers with a completed trip can review it (checked by the server). The owner publishes each review
+   (and may reply); published reviews are copied to the public document site/reviews without phone numbers or full names. */
+const REV={pub:{},draft:{}};
+const STAR='<path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1L3.2 9.4l6.1-.8z"/>';
+const starsHTML=(n,sz=18)=>`<span class="stars" style="--ss:${sz}px" role="img" aria-label="${n} out of 5 stars">${[1,2,3,4,5].map(i=>`<svg viewBox="0 0 24 24" fill="currentColor" class="${i<=Math.round(n)?"":"off"}" aria-hidden="true">${STAR}</svg>`).join("")}</span>`;
+const shortName=n=>{const p=String(n||"").trim().split(/\s+/);return p.length>1?`${p[0]} ${p[p.length-1][0]}.`:(p[0]||"Traveller")};
+const revPending=b=>!!(b.review&&b.review.at&&!(b.reviewMod&&b.reviewMod.at>=b.review.at));
+function renderReviews(){
+  const R=$("#revBody");if(!R)return;
+  const list=Object.values(REV.pub||{}).filter(r=>r&&r.stars).sort((a,b)=>(b.at||0)-(a.at||0));
+  if(!list.length){R.innerHTML=`<div class="empty">No reviews yet. After a completed trip, customers can rate it from <a href="#trips">My Trips</a>, and published reviews appear here.</div>`;return}
+  const avg=list.reduce((s,r)=>s+r.stars,0)/list.length,cnt=[5,4,3,2,1].map(n=>list.filter(r=>r.stars===n).length);
+  R.innerHTML=`<div class="rev-sum"><div class="rev-avg"><b>${avg.toFixed(1)}</b>${starsHTML(avg,22)}<div class="small muted" style="margin-top:6px">${list.length} review${list.length>1?"s":""} from completed trips</div></div>
+    <div class="rev-bars" aria-label="Rating breakdown">${[5,4,3,2,1].map((n,i)=>`<div class="rev-bar"><span>${n} ★</span><i><span style="width:${list.length?cnt[i]/list.length*100:0}%"></span></i><span class="small muted">${cnt[i]}</span></div>`).join("")}</div></div>
+    <div class="rev-grid">${list.slice(0,REV.all?60:6).map(r=>`<article class="rev-card tilt3d"><div class="who"><span class="ac-dot">${esc((r.name||"T")[0])}</span><div><b>${esc(r.name)}</b><div class="small muted">${esc(r.route||"")}${r.month?` · ${esc(r.month)}`:""}</div></div></div>${starsHTML(r.stars)}${r.text?`<blockquote>${esc(r.text)}</blockquote>`:""}${r.reply?`<p class="rev-reply"><b>Reply from ${esc(cfg().name||"the owner")}:</b> ${esc(r.reply)}</p>`:""}</article>`).join("")}</div>
+    ${list.length>6&&!REV.all?`<div class="bk-actions" style="justify-content:center;margin-top:14px"><button class="btn" type="button" data-revall="1">Show all ${list.length} reviews</button></div>`:""}`;
+}
+function revCustHTML(b){
+  const r=b.review,m=b.reviewMod,pend=revPending(b),edit=REV.draft[b.id];
+  if(r&&!edit)return`<div class="revbox"><div class="ccrow" style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><div><span class="eyebrow">Your review</span><br>${starsHTML(r.stars)}</div><button type="button" class="btn sm" data-revedit="${esc(b.id)}">Edit review</button></div>${r.text?`<p style="margin:0">${esc(r.text)}</p>`:""}
+    <p class="small ${pend?"muted":""}" style="margin:0;${!pend&&m&&m.status==="published"?"color:var(--ok)":""}">${pend?"Thank you! The owner will publish it shortly.":m&&m.status==="published"?"Published on our Reviews section. Thank you!":"Thank you for your feedback. The owner has read it."}</p>${m&&m.reply?`<p class="rev-reply"><b>Reply:</b> ${esc(m.reply)}</p>`:""}</div>`;
+  const cur=(edit&&edit.stars)||(r&&r.stars)||0;
+  return`<form class="revbox" data-revform="${esc(b.id)}" novalidate><div><span class="eyebrow">Rate your trip</span><p class="small muted" style="margin:2px 0 0">How was your trip to ${esc(b.to)}? Your rating helps other travellers.</p></div>
+    <div class="rate-in" role="radiogroup" aria-label="Rating">${[1,2,3,4,5].map(i=>`<input type="radio" name="stars" id="rs-${esc(b.id)}-${i}" value="${i}" ${cur===i?"checked":""}><label for="rs-${esc(b.id)}-${i}" class="${i<=cur?"on":""}" title="${i} star${i>1?"s":""}"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${STAR}</svg><span class="sr-only">${i} star${i>1?"s":""}</span></label>`).join("")}</div>
+    <label class="f"><span>Your review (optional)</span><textarea name="text" rows="3" maxlength="500" placeholder="Driver, vehicle, punctuality, places you visited…">${esc((edit&&edit.text)??(r&&r.text)??"")}</textarea></label>
+    <div class="bk-actions"><button type="submit" class="btn sm primary">${r?"Update review":"Submit review"}</button>${r?`<button type="button" class="btn sm ghost" data-revcancel="${esc(b.id)}">Cancel</button>`:""}</div></form>`;
+}
+document.addEventListener("change",e=>{const i=e.target;if(i.name==="stars"&&i.closest("[data-revform]")){const v=+i.value;i.closest(".rate-in").querySelectorAll("label").forEach((l,k)=>l.classList.toggle("on",k<v))}});
+document.addEventListener("submit",async e=>{const f=e.target;if(!f.dataset||!f.dataset.revform)return;e.preventDefault();
+  const id=f.dataset.revform,stars=+(f.querySelector("input[name=stars]:checked")||{}).value||0,text=f.text.value.trim().replace(/\s+\n/g,"\n");
+  if(!stars)return toast("Tap the stars to choose a rating.",true);
+  const btn=f.querySelector("[type=submit]");btn.disabled=true;
+  try{await writeDoc("requests/"+S.uid,{bookings:{[id]:{review:{stars,text,at:Date.now()}}}});delete REV.draft[id];toast("Thank you for your review!");renderTrips()}
+  catch(err){toast(err.message||"Couldn't save your review. Try again.",true)}finally{btn.disabled=false}
+});
+document.addEventListener("click",e=>{const t=e.target.closest?.("[data-revedit],[data-revcancel],[data-revall]");if(!t)return;
+  if(t.dataset.revall){REV.all=true;renderReviews();return}
+  if(t.dataset.revedit){const b=myBookings().find(x=>x.id===t.dataset.revedit);REV.draft[t.dataset.revedit]={stars:b?.review?.stars||0,text:b?.review?.text||""}}else delete REV.draft[t.dataset.revcancel];
+  renderTrips()});
+/* Owner console → Reviews */
+function oReviews(){
+  const list=allBookings().filter(b=>b.review&&b.review.stars).sort((a,b)=>(revPending(b)-revPending(a))||((b.review.at||0)-(a.review.at||0)));
+  const pub=Object.values(REV.pub||{}),avg=pub.length?pub.reduce((s,r)=>s+r.stars,0)/pub.length:0;
+  return`<div class="kpis"><div class="panel kpi"><b>${pub.length?avg.toFixed(1):"–"}</b><span>Published average</span></div><div class="panel kpi"><b>${pub.length}</b><span>Published</span></div><div class="panel kpi"><b style="color:var(--warn)">${list.filter(revPending).length}</b><span>Waiting for you</span></div></div>
+  <p class="small muted" style="margin:14px 0">Customers can review only completed trips. Publish each review to show it on the website (first name and last initial only, never the phone number). Please publish honest reviews, good and bad; hide only abusive or off-topic ones.</p>
+  <div class="grid g2">${list.map(b=>{const r=b.review,m=b.reviewMod,pend=revPending(b),isPub=!!(REV.pub||{})[b.id];
+    return`<article class="panel bk"><div class="trip-top"><div><span class="mono small muted">${esc(b.ref)}</span><h3>${esc(b.from)} → ${esc(b.to)}</h3></div><span class="chip ${pend?"warn":isPub?"ok":"mut"}">${pend?"New":isPub?"Published":"Hidden"}</span></div>
+      <div>${starsHTML(r.stars,20)} <span class="small muted">${fmtTime(r.at)} · ${esc(b.name)}</span></div>${r.text?`<blockquote style="margin:0">${esc(r.text)}</blockquote>`:'<p class="small muted">No written review.</p>'}
+      <label class="f"><span>Your public reply (optional)</span><input data-revreply="${esc(b.id)}" maxlength="300" value="${esc(m?.reply||"")}" placeholder="Thank you for travelling with us!"></label>
+      <div class="bk-actions"><button type="button" class="btn sm primary" data-revpub="${esc(b.id)}" data-uid="${esc(b.uid)}">${isPub&&!pend?"Update":"Publish"}</button>${isPub||pend?`<button type="button" class="btn sm ghost danger" data-revhide="${esc(b.id)}" data-uid="${esc(b.uid)}">Hide</button>`:""}</div></article>`}).join("")||'<div class="empty">No reviews yet. Customers can rate a trip once it is completed.</div>'}</div>`;
+}
+document.addEventListener("click",async e=>{const t=e.target.closest?.("[data-revpub],[data-revhide]");if(!t)return;
+  const id=t.dataset.revpub||t.dataset.revhide,uid=t.dataset.uid,publish=!!t.dataset.revpub,b=allBookings().find(x=>x.id===id&&x.uid===uid);if(!b||!b.review)return;
+  const reply=($(`[data-revreply="${CSS.escape(id)}"]`)?.value||"").trim().slice(0,300),now=Date.now();t.disabled=true;
+  try{
+    const items={...(REV.pub||{})};
+    if(publish)items[id]={stars:Math.max(1,Math.min(5,Math.round(b.review.stars))),text:String(b.review.text||"").slice(0,500),name:shortName(b.name),route:`${b.from} → ${b.to}`,month:new Date(b.date+"T00:00:00").toLocaleDateString("en-IN",{month:"short",year:"numeric"}),reply,at:b.review.at};
+    else delete items[id];
+    await S.db.doc("site/reviews").set({items});
+    await writeDoc("decisions/"+uid,{bookings:{[id]:{reviewMod:{status:publish?"published":"hidden",reply,at:now,by:S.uid}}}});
+    toast(publish?"Review published on the website.":"Review hidden from the website.");
+  }catch(err){toast(err.message||"Couldn't save. Try again.",true);t.disabled=false}
+});
+
+boot();renderExplore();exLoad();exFromHash();renderReviews();
 })();
 

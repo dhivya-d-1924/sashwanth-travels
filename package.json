@@ -1,6 +1,6 @@
 {
   "name": "sashwanth-travels",
-  "version": "3.2.0",
+  "version": "3.4.0",
   "private": true,
   "description": "Sashwanth Travels booking website: Saarathi AI booking agent (voice + text), accounts with customer/driver/manager/owner roles, live trip photos with odometer-based final bills, and an owner console.",
   "main": "server/server.js",

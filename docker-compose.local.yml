@@ -1,0 +1,16 @@
+# Try the Docker version on your own PC (Docker Desktop), without a domain or HTTPS:
+#   docker compose -f docker-compose.local.yml up -d --build      then open http://localhost:3000
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - COOKIE_SECURE=0
+      - TRUST_PROXY=0
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "3000:3000"

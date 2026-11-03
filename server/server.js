@@ -332,6 +332,26 @@ function createApp(opts = {}) {
     /* Business rule enforced on the server: blocked customers can't send requests. */
     if (segs[0] === "requests" && req.level === "interact" && D.docs["customers/" + req.uid]?.data?.blocked) throw new HttpError(403, "Your account can't send requests. Please call the owner.");
     const cur = D.docs[p];
+    /* Business rule: after a booking is sent, the customer can't change its name or phone directly.
+       They send a change request (contactChange) and the owner approves it (decisions → contact). */
+    if (segs[0] === "requests" && req.level === "interact" && cur && op !== "delete" && data && typeof data === "object") {
+      const next = op === "set" ? data : deepMerge(cur.data, data);
+      for (const [id, ob] of Object.entries((cur.data && cur.data.bookings) || {})) {
+        const nb = ((next && next.bookings) || {})[id];
+        if (nb && ["name", "phone"].some(k => String(nb[k] ?? "") !== String(ob[k] ?? ""))) throw new HttpError(403, "The name and phone on a booking change only with the owner's approval. Use \"Change name or phone\" in My Trips.");
+        const rv = nb && nb.review;
+        if (rv && JSON.stringify(rv) !== JSON.stringify(ob.review || null)) {
+          const dec = ((((D.docs["decisions/" + req.uid] || {}).data || {}).bookings) || {})[id] || {};
+          if (dec.status !== "completed") throw new HttpError(403, "You can review a trip after it is completed.");
+          if (typeof rv !== "object" || !Number.isInteger(rv.stars) || rv.stars < 1 || rv.stars > 5 || String(rv.text || "").length > 500) throw new HttpError(400, "Choose 1 to 5 stars; reviews can be up to 500 characters.");
+        }
+        const cc = nb && nb.contactChange;
+        if (cc && cc !== ob.contactChange && JSON.stringify(cc) !== JSON.stringify(ob.contactChange || null)) {
+          if (typeof cc !== "object" || !/^cc[a-z0-9]{4,16}$/.test(String(cc.id || "")) || !/^[\p{L}][\p{L} .'-]{1,59}$/u.test(String(cc.name || "").trim()) || !/^[+]?\d[\d ]{9,14}$/.test(String(cc.phone || "").trim()) || String(cc.why || "").length > 140)
+            throw new HttpError(400, "Enter a valid name and mobile number for the change.");
+        }
+      }
+    }
     if (op === "delete") { delete D.docs[p]; }
     else {
       if (!data || typeof data !== "object" || Array.isArray(data)) throw bad("Document body must be an object");
