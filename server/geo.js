@@ -36,9 +36,15 @@ function createGeo({ HttpError, fetchImpl = fetch, env = process.env, contact = 
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 10000);
     try {
       const r = await fetchImpl(url, { method: "GET", headers: { "User-Agent": UA, Accept: "application/json", ...headers }, signal: ctl.signal });
-      if (!r.ok) throw new HttpError(502, "The map service didn't answer. Please try again.");
+      const host = new URL(url).host;
+      if (!r.ok) { const why = r.status === 429 ? "is limiting requests (429)" : `answered ${r.status}`; console.warn(`[geo] ${host} ${why}`); throw new HttpError(502, `The map service (${host}) ${why}. Please try again.`); }
       return await r.json();
-    } catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(502, e.name === "AbortError" ? "The map service timed out. Please try again." : "The map service is unreachable right now."); }
+    } catch (e) {
+      if (e instanceof HttpError) throw e;
+      const host = (() => { try { return new URL(url).host; } catch { return "map service"; } })();
+      console.warn(`[geo] ${host} ${e.name === "AbortError" ? "timed out" : "unreachable: " + (e.cause && e.cause.code || e.message)}`);
+      throw new HttpError(502, e.name === "AbortError" ? `The map service (${host}) timed out. Please try again.` : `The map service (${host}) is unreachable right now.`);
+    }
     finally { clearTimeout(t); }
   }
   const need = () => { if (!enabled) throw new HttpError(503, "Maps and weather are switched off on this server."); };
