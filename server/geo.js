@@ -26,17 +26,29 @@ function createGeo({ HttpError, fetchImpl = fetch, env = process.env, contact = 
   const router = (env.GEO_ROUTER_URL || "https://router.project-osrm.org").replace(/\/$/, "");
   const UA = `SashwanthTravels/2.8 (${contact || env.OWNER_EMAIL || "owner@example.com"})`;
   const cache = new Map();
+  /* Fresh answers are reused for `ttl`; if the service is busy or down, an older answer (up to 12 h) is used instead. */
   const cached = async (key, ttl, fn) => {
     const hit = cache.get(key); if (hit && hit.exp > Date.now()) return hit.v;
-    const v = await fn(); cache.set(key, { v, exp: Date.now() + ttl });
+    let v;
+    try { v = await fn(); }
+    catch (e) { if (hit && hit.exp > Date.now() - 12 * 36e5) return hit.v; throw e; }
+    cache.set(key, { v, exp: Date.now() + ttl });
     if (cache.size > 3000) cache.delete(cache.keys().next().value);
     return v;
   };
+  /* When a service says "too many requests" (429), wait before asking it again instead of making it worse. */
+  const cool = new Map(), stats = { n: 0, at: Date.now() };
   async function get(url, headers = {}) {
+    const host0 = (() => { try { return new URL(url).host; } catch { return ""; } })();
+    const until = cool.get(host0) || 0;
+    if (until > Date.now()) throw new HttpError(503, `The map service (${host0}) is busy. It will be tried again in ${Math.ceil((until - Date.now()) / 1000)} seconds.`);
+    if (Date.now() - stats.at > 60e3) { if (stats.n > 120) console.warn(`[geo] ${stats.n} map/weather requests in the last minute`); stats.n = 0; stats.at = Date.now(); }
+    stats.n++;
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 10000);
     try {
       const r = await fetchImpl(url, { method: "GET", headers: { "User-Agent": UA, Accept: "application/json", ...headers }, signal: ctl.signal });
       const host = new URL(url).host;
+      if (r.status === 429) { const ra = Number(r.headers && typeof r.headers.get === "function" ? r.headers.get("retry-after") : 0); cool.set(host, Date.now() + Math.min(600, Math.max(60, ra || 60)) * 1000); }
       if (!r.ok) { const why = r.status === 429 ? "is limiting requests (429)" : `answered ${r.status}`; console.warn(`[geo] ${host} ${why}`); throw new HttpError(502, `The map service (${host}) ${why}. Please try again.`); }
       return await r.json();
     } catch (e) {

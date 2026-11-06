@@ -1571,7 +1571,7 @@ function geoStatusMsg(){
 let serverProbe=null;
 function probeServerGeo(){
   if(!window.claude?.geo||serverProbe)return;
-  serverProbe=window.claude.geo.weatherAt(13.08,80.27,"Chennai",todayISO(),1).then(()=>{GEO.serverErr=""}).catch(e=>{GEO.serverErr=e.message||"no answer."}).finally(()=>{renderHere();renderPlanGeo()});
+  serverProbe=window.claude.geo.weatherAt(13.08,80.27,"Chennai",todayISO(),1).then(()=>{GEO.serverErr=""}).catch(e=>{const m=e.message||"no answer.";if(/busy|limiting|429|timed out|503/i.test(m)){GEO.serverErr="";GEO.wxBusy=true;setTimeout(()=>{serverProbe=null;GEO.wxBusy=false;probeServerGeo()},90e3)}else GEO.serverErr=m}).finally(()=>{renderHere();renderPlanGeo()});
 }
 /* Turn the direct client on only if this view can actually reach the services (one tiny weather call). */
 function probeDirectGeo(){

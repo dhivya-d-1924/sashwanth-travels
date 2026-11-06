@@ -98,3 +98,19 @@ test("approximate city from the internet connection: own network for a local vis
   assert.equal(remote.city, "Madurai"); assert.equal(log.at(-1).path, "/49.37.10.20");
   const lan = await g.ipLocate("192.168.1.5"); assert.equal(lan.city, "Coimbatore");
 });
+
+test("weather service busy (429): waits before asking again and reuses the last good answer", async () => {
+  const { createGeo } = require("../server/geo.js");
+  class HttpError extends Error { constructor(s, m) { super(m); this.status = s; } }
+  let n = 0, mode = "ok";
+  const fetchImpl = async () => { n++; if (mode === "busy") return { ok: false, status: 429, headers: { get: () => "120" }, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => ({ daily: { time: ["2026-11-06"], weather_code: [1], temperature_2m_max: [31], temperature_2m_min: [24], precipitation_probability_max: [10] }, current: { temperature_2m: 29, weather_code: 1 } }) }; };
+  const g = createGeo({ fetchImpl, HttpError, env: {} });
+  const first = await g.weather({ lat: 13.08, lon: 80.27, name: "Chennai" }, undefined, 1);
+  assert.equal(first.available, true);
+  mode = "busy";
+  await assert.rejects(g.weather({ lat: 11.41, lon: 76.70, name: "Ooty" }, undefined, 1), /limiting requests/);
+  const before = n;
+  await assert.rejects(g.weather({ lat: 10.23, lon: 77.49, name: "Kodaikanal" }, undefined, 1), /busy/);
+  assert.equal(n, before, "no new request while cooling down");
+});

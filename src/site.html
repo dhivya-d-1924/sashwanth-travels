@@ -1085,7 +1085,7 @@ body.lb-open{overflow:hidden}
     <nav class="foot-col" aria-label="Help"><h4>Help</h4><a href="#how">How it works</a><a href="#pay">FAQ</a><a href="#account">My account</a><a href="#contact">Contact us</a></nav>
     <div class="foot-col reach"><h4>Reach us</h4><div class="foot-reach" id="footReach"></div></div>
   </div>
-  <div class="wrap foot-bottom"><span><span id="footName">© Sashwanth Travels</span> · <span class="mono" id="siteVersion">v3.5.3</span></span><span>Fares are estimates until the owner confirms. Final billing on actual km.</span><a class="totop" href="#top" aria-label="Back to top"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Top</a></div>
+  <div class="wrap foot-bottom"><span><span id="footName">© Sashwanth Travels</span> · <span class="mono" id="siteVersion">v3.5.4</span></span><span>Fares are estimates until the owner confirms. Final billing on actual km.</span><a class="totop" href="#top" aria-label="Back to top"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>Top</a></div>
 </footer>
 <div id="toasts" aria-live="polite"></div>
 <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Photo viewer">
@@ -2671,7 +2671,7 @@ function geoStatusMsg(){
 let serverProbe=null;
 function probeServerGeo(){
   if(!window.claude?.geo||serverProbe)return;
-  serverProbe=window.claude.geo.weatherAt(13.08,80.27,"Chennai",todayISO(),1).then(()=>{GEO.serverErr=""}).catch(e=>{GEO.serverErr=e.message||"no answer."}).finally(()=>{renderHere();renderPlanGeo()});
+  serverProbe=window.claude.geo.weatherAt(13.08,80.27,"Chennai",todayISO(),1).then(()=>{GEO.serverErr=""}).catch(e=>{const m=e.message||"no answer.";if(/busy|limiting|429|timed out|503/i.test(m)){GEO.serverErr="";GEO.wxBusy=true;setTimeout(()=>{serverProbe=null;GEO.wxBusy=false;probeServerGeo()},90e3)}else GEO.serverErr=m}).finally(()=>{renderHere();renderPlanGeo()});
 }
 /* Turn the direct client on only if this view can actually reach the services (one tiny weather call). */
 function probeDirectGeo(){
